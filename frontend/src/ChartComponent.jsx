@@ -83,6 +83,10 @@ const ChartComponent = ({ chartData, darkMode }) => {
           ...baseOptions.plugins?.tooltip,
           callbacks: {
             title: function(context) {
+              if (chartType === 'scatter' && context[0]?.raw?.label) {
+                // Use the custom label from the data point if available
+                return context[0].raw.label.split(':')[0]; // Get cultivar name part
+              }
               if (chartType === 'scatter' && context[0]?.dataset?.label) {
                 return context[0].dataset.label;
               }
@@ -90,6 +94,10 @@ const ChartComponent = ({ chartData, darkMode }) => {
             },
             label: function(context) {
               if (chartType === 'scatter') {
+                // Use the custom label from the data point if available
+                if (context.raw?.label) {
+                  return context.raw.label;
+                }
                 const label = context.dataset.label || '';
                 const x = context.parsed.x;
                 const y = context.parsed.y;

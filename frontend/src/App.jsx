@@ -226,6 +226,12 @@ export default function App() {
       setIsStreaming(true);
       setStreamingText('');
 
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+      }, 120000); // 2 minute timeout
+
       const response = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
         headers: {
@@ -235,7 +241,10 @@ export default function App() {
           question: userMsgText,
           conversation_history: getConversationHistory()
         }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -244,6 +253,7 @@ export default function App() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let fullText = '';
+      let buffer = ''; // Buffer to accumulate incomplete JSON
 
       try {
         while (true) {
@@ -251,12 +261,19 @@ export default function App() {
           if (done) break;
 
           const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
+          buffer += chunk;
+          const lines = buffer.split('\n');
+          
+          // Keep the last potentially incomplete line in the buffer
+          buffer = lines.pop() || '';
 
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
-                const data = JSON.parse(line.slice(6));
+                const jsonStr = line.slice(6).trim();
+                if (!jsonStr) continue; // Skip empty lines
+                
+                const data = JSON.parse(jsonStr);
                 
                 if (data.type === 'content') {
                   fullText += data.data;
@@ -347,44 +364,46 @@ export default function App() {
                     setIsPostProcessing(false);
                   };
 
-                                     processSteps().then(() => {
-                     // Add final message with metadata after post-processing
+                  processSteps().then(() => {
+                    // Add final message with metadata after post-processing
                     
-                     let assistantMarkdown = fullText;
+                    let assistantMarkdown = fullText;
 
-                     // Don't append sources to markdown - we'll render them separately
+                    // Don't append sources to markdown - we'll render them separately
 
-                     // Append Full Markdown Table
-                     if (data.data.full_markdown_table) {
-                       assistantMarkdown += '\n\n---\n## 📊 **Complete Dataset**\n' + data.data.full_markdown_table;
-                     }
+                    // Append Full Markdown Table
+                    if (data.data.full_markdown_table) {
+                      assistantMarkdown += '\n\n---\n## 📊 **Complete Dataset**\n' + data.data.full_markdown_table;
+                    }
 
-                     setMessages(prev => [...prev, {
-                       sender: 'assistant',
-                       text: assistantMarkdown,
-                       sources: data.data.sources,
-                       genes: data.data.genes,
-                       fullMarkdownTable: data.data.full_markdown_table,
-                       suggestedQuestions: data.data.suggested_questions,
-                       chartData: data.data.chart_data,
-                       timestamp: new Date()
-                     }]);
+                    setMessages(prev => [...prev, {
+                      sender: 'assistant',
+                      text: assistantMarkdown,
+                      sources: data.data.sources,
+                      genes: data.data.genes,
+                      fullMarkdownTable: data.data.full_markdown_table,
+                      suggestedQuestions: data.data.suggested_questions,
+                      chartData: data.data.chart_data,
+                      timestamp: new Date()
+                    }]);
 
-                     if (data.data.suggested_questions && data.data.suggested_questions.length > 0) {
-                       const newMessageIndex = messages.length;
-                       setShowSuggestedQuestions(prevState => ({
-                         ...prevState,
-                         [newMessageIndex]: false
-                       }));
-                     }
+                    if (data.data.suggested_questions && data.data.suggested_questions.length > 0) {
+                      const newMessageIndex = messages.length;
+                      setShowSuggestedQuestions(prevState => ({
+                        ...prevState,
+                        [newMessageIndex]: false
+                      }));
+                    }
 
-                     setStreamingText('');
-                   });
+                    setStreamingText('');
+                  });
                 } else if (data.type === 'done') {
                   break;
                 }
               } catch (e) {
-                console.error('Error parsing streaming data:', e);
+                console.error('Error parsing streaming data:', e, 'Line:', line);
+                // Don't break on parsing errors, just skip the malformed line
+                continue;
               }
             }
           }
@@ -397,16 +416,29 @@ export default function App() {
       console.error('Error sending message:', error);
       setIsLoading(false);
       setIsStreaming(false);
+      setIsPostProcessing(false);
+      
+      let errorMessage = '❌ **Connection Error**\n\nUnable to reach the research database. Please check your connection and try again.';
+      
+      if (error.name === 'AbortError') {
+        errorMessage = '⏱️ **Request Timeout**\n\nThe request took too long to complete. Please try again with a simpler query or check your connection.';
+      } else if (error.message.includes('JSON')) {
+        errorMessage = '🔧 **Data Processing Error**\n\nThere was an issue processing the response. Please try your query again.';
+      }
+      
       setMessages((msgs) => [
         ...msgs,
         {
           sender: 'assistant',
-          text: '❌ **Connection Error**\n\nUnable to reach the research database. Please check your connection and try again.',
+          text: errorMessage,
           timestamp: new Date()
         }
       ]);
     } finally {
       setLoadingMessage('');
+      setIsLoading(false);
+      setIsStreaming(false);
+      setIsPostProcessing(false);
     }
   };
 

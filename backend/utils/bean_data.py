@@ -109,7 +109,7 @@ def create_scatter_chart_data(df: pd.DataFrame, x_col: str, y_col: str, color_co
     datasets = []
     
     # If we have cultivar information and want to show individual points
-    if 'Cultivar Name' in plot_df.columns and len(plot_df) <= 100:  # Reasonable limit for individual points
+    if 'Cultivar Name' in plot_df.columns and (len(plot_df) <= 100 or highlight_cultivar):  # Always use individual points if highlighting
         # Create individual points for each cultivar
         cultivars = plot_df['Cultivar Name'].unique()
         print(f"🔍 Found {len(cultivars)} cultivars in data")
@@ -133,17 +133,18 @@ def create_scatter_chart_data(df: pd.DataFrame, x_col: str, y_col: str, color_co
             highlight_cultivar_lower = highlight_cultivar.lower()
             
             # Find matching cultivars (case-insensitive partial match)
-            matching_cultivars = [c for c in cultivars if highlight_cultivar_lower in c.lower()]
-            print(f"🔍 Matching cultivars found: {matching_cultivars}")
-            
-            # Debug: Print what we're looking for and what we found
+            matching_cultivars = [c for c in cultivars if highlight_cultivar_lower in str(c).lower()]
+            print(f"🔍 Highlighting logic activated!")
             print(f"🔍 Looking for cultivar: '{highlight_cultivar}'")
-            print(f"🔍 Available cultivars: {list(cultivars)}")
+            print(f"🔍 Total cultivars available: {len(cultivars)}")
+            print(f"🔍 Total data points: {len(plot_df)}")
+            print(f"🔍 Sample cultivars: {list(cultivars)[:10]}")
             print(f"🔍 Matching cultivars found: {matching_cultivars}")
             
             # Create highlighted dataset first
             for cultivar in matching_cultivars:
                 cultivar_data = plot_df[plot_df['Cultivar Name'] == cultivar]
+                print(f"🔍 Creating highlighted dataset for '{cultivar}' with {len(cultivar_data)} data points")
                 data_points = []
                 for _, row in cultivar_data.iterrows():
                     location = row.get('Location', '')
@@ -158,15 +159,19 @@ def create_scatter_chart_data(df: pd.DataFrame, x_col: str, y_col: str, color_co
                         "cultivar": cultivar
                     })
                 
-                datasets.append({
+                highlighted_dataset = {
                     "label": f"{cultivar} ⭐ HIGHLIGHTED",
                     "data": data_points,
-                    "backgroundColor": "#FF0000",  # Bright red for highlighting
+                    "backgroundColor": "#FF4500",  # Bright orange-red for maximum visibility
                     "borderColor": "#FFFFFF",  # White border for contrast
-                    "pointRadius": 10,  # Larger points for highlighting
-                    "pointBorderWidth": 3,
-                    "pointStyle": "star"  # Star shape for highlighting
-                })
+                    "pointRadius": 12,  # Even larger points for highlighting
+                    "pointBorderWidth": 4,  # Thicker border
+                    "pointStyle": "rectRot",  # Diamond shape for highlighting (more visible than star)
+                    "pointHoverRadius": 15,  # Larger on hover
+                    "pointHoverBorderWidth": 5
+                }
+                datasets.append(highlighted_dataset)
+                print(f"🔍 Added highlighted dataset: {highlighted_dataset['label']} with {len(data_points)} points")
             
             # Create dataset for other cultivars (smaller, less prominent)
             other_cultivars = [c for c in cultivars if c not in matching_cultivars]
@@ -194,9 +199,11 @@ def create_scatter_chart_data(df: pd.DataFrame, x_col: str, y_col: str, color_co
                     datasets.append({
                         "label": f"Other Cultivars ({len(other_cultivars)} varieties)",
                         "data": data_points,
-                        "backgroundColor": "#2E8B5780",  # Semi-transparent green
-                        "borderColor": "#2E8B57",
-                        "pointRadius": 4
+                        "backgroundColor": "#6B7280",  # Gray for background data
+                        "borderColor": "#4B5563",  # Darker gray border
+                        "pointRadius": 3,  # Smaller points for background
+                        "pointHoverRadius": 5,  # Slightly larger on hover
+                        "pointBorderWidth": 1
                     })
             else:
                 # Show individual cultivars if there aren't too many
@@ -219,9 +226,11 @@ def create_scatter_chart_data(df: pd.DataFrame, x_col: str, y_col: str, color_co
                     datasets.append({
                         "label": cultivar,
                         "data": data_points,
-                        "backgroundColor": colors[i % len(colors)] + "80",  # Semi-transparent
-                        "borderColor": colors[i % len(colors)],
-                        "pointRadius": 4
+                        "backgroundColor": "#9CA3AF",  # Light gray for background cultivars
+                        "borderColor": "#6B7280",  # Darker gray border
+                        "pointRadius": 3,  # Smaller points for background
+                        "pointHoverRadius": 5,  # Slightly larger on hover
+                        "pointBorderWidth": 1
                     })
         
         else:
@@ -287,9 +296,11 @@ def create_scatter_chart_data(df: pd.DataFrame, x_col: str, y_col: str, color_co
                         datasets.append({
                             "label": f"All Cultivars ({len(cultivars)} varieties)",
                             "data": data_points,
-                            "backgroundColor": "#2E8B57",
-                            "borderColor": "#2E8B57",
-                            "pointRadius": 5
+                            "backgroundColor": "#3B82F6",  # Bright blue instead of green
+                            "borderColor": "#1D4ED8",  # Darker blue border
+                            "pointRadius": 5,
+                            "pointHoverRadius": 7,
+                            "pointBorderWidth": 2
                         })
                 else:
                     # Too many cultivars - group by color_col if available, otherwise single dataset
@@ -342,9 +353,11 @@ def create_scatter_chart_data(df: pd.DataFrame, x_col: str, y_col: str, color_co
                         datasets.append({
                             "label": f"All Cultivars ({len(cultivars)} varieties)",
                             "data": data_points,
-                            "backgroundColor": "#2E8B57",
-                            "borderColor": "#2E8B57",
-                            "pointRadius": 5
+                            "backgroundColor": "#3B82F6",  # Bright blue instead of green
+                            "borderColor": "#1D4ED8",  # Darker blue border
+                            "pointRadius": 5,
+                            "pointHoverRadius": 7,
+                            "pointBorderWidth": 2
                         })
             else:
                 # No cultivar column - show all points as single dataset
@@ -366,9 +379,11 @@ def create_scatter_chart_data(df: pd.DataFrame, x_col: str, y_col: str, color_co
                 datasets.append({
                     "label": f"{y_col} vs {x_col}",
                     "data": data_points,
-                    "backgroundColor": "#2E8B57",
-                    "borderColor": "#2E8B57",
-                    "pointRadius": 5
+                    "backgroundColor": "#3B82F6",  # Bright blue instead of green
+                    "borderColor": "#1D4ED8",  # Darker blue border
+                    "pointRadius": 5,
+                    "pointHoverRadius": 7,
+                    "pointBorderWidth": 2
                 })
     
     else:
@@ -422,13 +437,28 @@ def create_scatter_chart_data(df: pd.DataFrame, x_col: str, y_col: str, color_co
             datasets.append({
                 "label": f"{y_col} vs {x_col}",
                 "data": data_points,
-                "backgroundColor": "#2E8B57",
-                "borderColor": "#2E8B57"
+                "backgroundColor": "#3B82F6",  # Bright blue instead of green
+                "borderColor": "#1D4ED8",  # Darker blue border
+                "pointRadius": 5,
+                "pointHoverRadius": 7,
+                "pointBorderWidth": 2
             })
+    
+    # Create a more descriptive title
+    title_parts = [f"{y_col} vs {x_col}"]
+    if highlight_cultivar:
+        title_parts.append(f"(Highlighting {highlight_cultivar})")
+    if filter_text and filter_text != "()":
+        title_parts.append(filter_text)
+    
+    # Debug: Print final dataset info
+    print(f"🔍 Final datasets created: {len(datasets)}")
+    for i, ds in enumerate(datasets):
+        print(f"🔍 Dataset {i}: '{ds['label']}' - {len(ds['data'])} points - color: {ds.get('backgroundColor', 'N/A')}")
     
     return {
         "type": "scatter",
-        "title": f"{y_col} vs {x_col} {filter_text}",
+        "title": " ".join(title_parts),
         "data": {
             "datasets": datasets
         },
@@ -777,7 +807,7 @@ def create_line_chart_data(df: pd.DataFrame, x_col: str, y_col: str, group_col: 
                 "tension": 0.1
             })
         
-        labels = sorted(plot_df[x_col].unique())
+        labels = sorted(plot_df[x_col].astype(str).unique())
     else:
         # Single line
         line_data = plot_df.groupby(x_col)[y_col].mean().reset_index()
@@ -933,7 +963,7 @@ def create_area_chart_data(df: pd.DataFrame, x_col: str, y_col: str, group_col: 
                 "tension": 0.1
             })
         
-        labels = sorted(plot_df[x_col].unique())
+        labels = sorted(plot_df[x_col].astype(str).unique())
     else:
         area_data = plot_df.groupby(x_col)[y_col].mean().reset_index()
         area_data = area_data.sort_values(x_col)
@@ -1020,6 +1050,20 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     if df_trials.empty:
         return "Bean trial data could not be loaded.", "", {}
 
+    # Debug: Print the arguments received
+    print(f"🔍 Bean query args received: {args}")
+    
+    # Debug: Print some dataset info
+    if not df_trials.empty:
+        print(f"🔍 Dataset has {len(df_trials)} rows")
+        # Convert to string to avoid mixed type sorting issues
+        sample_cultivars = sorted([str(c) for c in df_trials['Cultivar Name'].dropna().unique()])[:20]
+        print(f"🔍 Sample cultivars: {sample_cultivars}")
+        
+        # Check specifically for OAC cultivars
+        oac_cultivars = [str(c) for c in df_trials['Cultivar Name'].dropna().unique() if 'oac' in str(c).lower()]
+        print(f"🔍 OAC cultivars found: {oac_cultivars}")
+    
     df = df_trials.copy()
 
     # 1) Extract filters and analysis parameters from args
@@ -1042,6 +1086,34 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     similarity_threshold = args.get("similarity_threshold", 15.0)  # Default 15% similarity
     group_by = args.get("group_by", None)  # For grouping analysis
     chart_type = args.get("chart_type", None)  # Specific chart type requested
+    
+    # Fallback: Check if cultivar name is mentioned in args but not extracted
+    if not cultivar:
+        # Look for common cultivar patterns in the arguments string and original question
+        args_str = str(args).lower()
+        original_question = args.get('original_question', '').lower()
+        search_text = args_str + ' ' + original_question
+        
+        if 'oac seal' in search_text:
+            cultivar = 'OAC Seal'
+            print(f"🔧 Detected cultivar '{cultivar}' from args context")
+        elif 'oac steam' in search_text:
+            cultivar = 'OAC Steam'
+            print(f"🔧 Detected cultivar '{cultivar}' from args context")
+        elif 'oac' in search_text:
+            cultivar = 'OAC'
+            print(f"🔧 Detected cultivar '{cultivar}' from args context")
+    
+    # Special handling for global comparison requests
+    if analysis_type == "compare" and cultivar and "global" in str(args).lower():
+        print(f"🎯 Triggering global comparison for: {cultivar}")
+        return handle_global_comparison(df, cultivar, analysis_column, args)
+    
+    # Also handle ranking/comparison requests that mention cultivars
+    if cultivar and (analysis_type in ["compare", "cultivar_analysis"] or 
+                    any(term in str(args).lower() for term in ["rank", "ranking", "production", "compare"])):
+        print(f"🎯 Triggering global comparison (fallback) for: {cultivar}")
+        return handle_global_comparison(df, cultivar, analysis_column, args)
 
     # 2) Apply year filtering - handle both single year and year ranges
     if year is not None:
@@ -1147,7 +1219,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
             # For cultivar searches, show related cultivars
             if len(cultivar.split()) > 1:
                 first_word = cultivar.split()[0].lower()
-                related_cultivars = [c for c in available_cultivars if first_word in c.lower()]
+                related_cultivars = [c for c in available_cultivars if first_word in str(c).lower()]
                 if related_cultivars:
                     suggestions = f"""
 
@@ -1157,7 +1229,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
 """
             else:
                 # Show cultivars that contain the search term
-                related_cultivars = [c for c in available_cultivars if cultivar.lower() in c.lower()]
+                related_cultivars = [c for c in available_cultivars if cultivar.lower() in str(c).lower()]
                 if related_cultivars:
                     suggestions = f"""
 
@@ -1457,7 +1529,7 @@ No data found matching the specified criteria for similarity analysis.
                     available_cultivars = bean_type_data['Cultivar Name'].dropna().unique()
                     if len(cultivar.split()) > 1:
                         first_word = cultivar.split()[0].lower()
-                        related_cultivars = [c for c in available_cultivars if first_word in c.lower()]
+                        related_cultivars = [c for c in available_cultivars if first_word in str(c).lower()]
                         if related_cultivars:
                             suggestions = f"Available {first_word.upper()} cultivars: {', '.join(sorted(related_cultivars)[:10])}"
                         else:
@@ -2042,94 +2114,209 @@ Chart generation completed successfully.
 # ---- GPT-compatible JSON Schema ----
 function_schema = {
     "name": "query_bean_data",
-    "description": "Query and analyze dry bean cultivar trial data. Can filter by year/year range, location, yield, maturity, cultivar name, bean type, or trial group. Performs comprehensive analysis including: statistical analysis (average, sum, count, max, min, median, std), multi-year analysis (yearly_average for year-by-year breakdown, trend analysis), similarity analysis (find cultivars with similar performance), and comparative analysis (compare different groups). For comparative questions like 'difference between X and other Y beans', use analysis_type='compare' with cultivar='X' and bean_type='Y bean'. For scatter plots, use x_axis and y_axis parameters to specify which variables to plot (e.g., x_axis='Maturity', y_axis='Yield' for maturity vs yield). Perfect for questions like 'average white bean yield each year since 2012', 'yield trend over time', 'plot maturity vs yield scatter plot', 'which cultivars have similar yield to white beans?', or 'Is there a difference between OAC Steam and other white beans?'",
+    "description": "Query dry bean trial data with filtering, analysis, and visualization options",
     "parameters": {
         "type": "object",
         "properties": {
-            "year": {
-                "type": "integer",
-                "description": "Year of the trial (e.g., 2022)",
-            },
-            "year_start": {
-                "type": "integer",
-                "description": "Start year for range queries. Use when user asks for data 'since YYYY' or 'from YYYY onwards'. Example: 'since 2012' means year_start=2012",
-            },
-            "year_end": {
-                "type": "integer",
-                "description": "End year for range queries. Use when user specifies 'until YYYY' or 'through YYYY'. Can be combined with year_start for full ranges like '2012-2020'",
-            },
-            "location": {
-                "type": "string",
-                "description": "Location code (e.g., WOOD, ELOR)",
-            },
-            "min_yield": {
-                "type": "number",
-                "description": "Minimum yield (e.g., 4000)",
-            },
-            "max_maturity": {
-                "type": "number",
-                "description": "Maximum maturity in days",
-            },
-            "cultivar": {
-                "type": "string",
-                "description": "Cultivar name or partial match (e.g., 'OAC', 'common bean'). Case-insensitive.",
-            },
-            "bean_type": {
-                "type": "string",
-                "enum": ["coloured bean", "white bean"],
-                "description": "Type of bean (either 'coloured bean' or 'white bean').",
-            },
-            "trial_group": {
-                "type": "string",
-                "enum": ["major", "minor"],
-                "description": "Major or minor performance trial group.",
-            },
-            "sort": {
-                "type": "string",
-                "enum": ["highest", "lowest"],
-                "description": "Sort results by yield. 'highest' for descending yield, 'lowest' for ascending yield.",
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Maximum number of rows to return (e.g., 50 for top 50 results).",
-            },
+            "year": {"type": "integer", "description": "Single year to filter by"},
+            "year_start": {"type": "integer", "description": "Start year for range filtering"},
+            "year_end": {"type": "integer", "description": "End year for range filtering"},
+            "location": {"type": "string", "description": "Location code (e.g., WOOD, ELOR, HARR)"},
+            "bean_type": {"type": "string", "description": "Type of bean: 'white bean' or 'coloured bean'"},
+            "trial_group": {"type": "string", "description": "Trial group: 'major' or 'minor'"},
+            "cultivar": {"type": "string", "description": "Cultivar name or partial name to search for"},
+            "min_yield": {"type": "number", "description": "Minimum yield threshold"},
+            "max_maturity": {"type": "number", "description": "Maximum maturity days"},
+            "sort": {"type": "string", "enum": ["highest", "lowest"], "description": "Sort order for results"},
+            "limit": {"type": "integer", "description": "Maximum number of results to return"},
             "analysis_type": {
                 "type": "string",
-                "description": "Type of analysis to perform. The system will intelligently choose the best visualization based on data structure. Supports: 'average', 'sum', 'count', 'max', 'min', 'median', 'std' for basic statistics; 'yearly_average', 'trend' for multi-year analysis; 'similar' for finding similar performance; 'compare' for comparative analysis (especially when comparing a specific cultivar against others, like 'OAC Steam vs other white beans'); 'visualization' for dynamic chart selection; 'scatter', 'location_analysis', 'cultivar_analysis' for specific breakdowns. Use 'compare' when the user asks about differences between a specific cultivar and other cultivars of the same type.",
+                "enum": ["average", "sum", "count", "max", "min", "median", "std", "similar", "compare", "yearly_average", "trend", "visualization", "scatter", "location_analysis", "cultivar_analysis"],
+                "description": "Type of analysis to perform"
             },
-            "analysis_column": {
-                "type": "string",
-                "description": "Column to analyze (e.g., 'Yield', 'Maturity'). Defaults to 'Yield' if not specified.",
-            },
-            "compare_to": {
-                "type": "string",
-                "description": "What to compare against for similarity analysis (e.g., 'white beans', '2020 average').",
-            },
-            "similarity_threshold": {
-                "type": "number",
-                "description": "Percentage threshold for similarity analysis (default: 15%). E.g., 10 means within 10% of reference value.",
-            },
-            "group_by": {
-                "type": "string",
-                "description": "Group analysis by this column ('year', 'location', 'bean_type', 'cultivar'). Used for comparative analysis.",
-            },
-            "chart_type": {
-                "type": "string",
-                "description": "Specific chart type requested by user. Options: 'scatter', 'bar', 'pie', 'line', 'histogram', 'area'. Use this when user explicitly requests a specific chart type like 'make me a pie chart' or 'create a bar graph'.",
-            },
-            "highlight_cultivar": {
-                "type": "string",
-                "description": "Specific cultivar name to highlight in visualizations (e.g., 'Lighthouse', 'OAC'). Use when user asks to highlight, emphasize, or make bold a specific variety/cultivar in charts.",
-            },
-            "x_axis": {
-                "type": "string",
-                "description": "Column to use for X-axis in scatter plots (e.g., 'Maturity', 'Year', 'Yield'). Use when user specifies what should be on the x-axis like 'maturity on the x-axis' or 'plot year vs yield'.",
-            },
-            "y_axis": {
-                "type": "string",
-                "description": "Column to use for Y-axis in scatter plots (e.g., 'Yield', 'Maturity', 'Year'). Use when user specifies what should be on the y-axis like 'yield on the y-axis' or 'plot year vs yield'.",
-            },
-        },
-        "required": [],
-    },
-} 
+            "analysis_column": {"type": "string", "description": "Column to analyze (Yield, Maturity, etc.)"},
+            "compare_to": {"type": "string", "description": "What to compare against"},
+            "similarity_threshold": {"type": "number", "description": "Percentage threshold for similarity (default 15%)"},
+            "group_by": {"type": "string", "description": "Column to group analysis by"},
+            "chart_type": {"type": "string", "enum": ["pie", "bar", "line", "histogram", "area", "scatter"], "description": "Specific chart type for visualization"}
+        }
+    }
+}
+
+def handle_global_comparison(df: pd.DataFrame, cultivar: str, analysis_column: str, args: Dict) -> Tuple[str, str, Dict]:
+    """Handle global comparison requests that compare cultivar performance with broader context."""
+    
+    print(f"🔍 Global comparison called with cultivar: '{cultivar}', column: '{analysis_column}'")
+    print(f"🔍 Available cultivars in dataset: {sorted(df['Cultivar Name'].dropna().astype(str).unique())[:10]}...")
+    
+    # Find cultivar data
+    cultivar_data = df[df["Cultivar Name"].astype(str).str.contains(cultivar, case=False, na=False)]
+    print(f"🔍 Found {len(cultivar_data)} records for '{cultivar}'")
+    
+    if cultivar_data.empty and len(cultivar.split()) > 1:
+        # Try first word
+        first_word = cultivar.split()[0]
+        print(f"🔍 Trying first word: '{first_word}'")
+        cultivar_data = df[df["Cultivar Name"].astype(str).str.contains(first_word, case=False, na=False)]
+        print(f"🔍 Found {len(cultivar_data)} records for first word '{first_word}'")
+        cultivar = first_word  # Update cultivar name for display
+    
+    if cultivar_data.empty:
+        # Try to find similar cultivars and provide helpful response
+        all_cultivars = df['Cultivar Name'].dropna().unique()
+        similar_cultivars = [c for c in all_cultivars if cultivar.lower() in str(c).lower()]
+        
+        if not similar_cultivars:
+            # Try partial matching with first 3 characters
+            similar_cultivars = [c for c in all_cultivars if str(c).lower().startswith(cultivar[:3].lower())]
+        
+        response = f"""❌ **No exact match found** for cultivar '{cultivar}' in our dataset.
+
+## 📊 **Available Dataset Statistics**
+
+**Total Cultivars:** {len(all_cultivars)}
+**Total Trials:** {len(df)}
+**Average Yield Across All Cultivars:** {df['Yield'].mean():.0f} kg/ha
+**Yield Range:** {df['Yield'].min():.0f} - {df['Yield'].max():.0f} kg/ha
+
+"""
+        
+        if similar_cultivars:
+            response += f"""### 🌱 **Similar Cultivars Available:**
+{', '.join(sorted(similar_cultivars)[:10])}
+{f"... and {len(similar_cultivars)-10} more" if len(similar_cultivars) > 10 else ""}
+
+"""
+        
+        # Get top performing cultivars for context
+        top_cultivars = df.groupby('Cultivar Name')['Yield'].mean().sort_values(ascending=False).head(10)
+        response += f"""### 🏆 **Top 10 Performing Cultivars:**
+
+"""
+        for i, (cv, yield_val) in enumerate(top_cultivars.items(), 1):
+            response += f"{i}. **{cv}**: {yield_val:.0f} kg/ha\n"
+        
+        response += f"""
+💡 **This provides context from our cultivar trial dataset for comparison with global production estimates.**"""
+        
+        return response, "", {}
+    
+    # Calculate cultivar statistics
+    cultivar_stats = {
+        'name': cultivar,
+        'count': len(cultivar_data),
+        'mean': cultivar_data[analysis_column].mean(),
+        'std': cultivar_data[analysis_column].std(),
+        'min': cultivar_data[analysis_column].min(),
+        'max': cultivar_data[analysis_column].max(),
+        'median': cultivar_data[analysis_column].median()
+    }
+    
+    # Get all data for comparison
+    all_data_stats = {
+        'count': len(df),
+        'mean': df[analysis_column].mean(),
+        'std': df[analysis_column].std(),
+        'min': df[analysis_column].min(),
+        'max': df[analysis_column].max(),
+        'median': df[analysis_column].median()
+    }
+    
+    # Calculate performance ranking
+    all_cultivars = df.groupby('Cultivar Name')[analysis_column].mean().sort_values(ascending=False)
+    cultivar_rank = None
+    for i, (cv, _) in enumerate(all_cultivars.items(), 1):
+        if cultivar.lower() in str(cv).lower():
+            cultivar_rank = i
+            break
+    
+    # Get bean type breakdown if available
+    bean_type_stats = {}
+    if 'bean_type' in df.columns:
+        for bt in df['bean_type'].unique():
+            if pd.notna(bt):
+                bt_data = df[df['bean_type'] == bt]
+                bean_type_stats[bt] = {
+                    'count': len(bt_data),
+                    'mean': bt_data[analysis_column].mean(),
+                    'std': bt_data[analysis_column].std()
+                }
+    
+    # Build comprehensive response
+    response = f"""## 🌍 **Global Dry Bean Production Context**
+
+### 📊 **{cultivar} Performance Data**
+
+**Records Found:** {cultivar_stats['count']} trials
+**Average {analysis_column}:** {cultivar_stats['mean']:.0f} kg/ha
+**Range:** {cultivar_stats['min']:.0f} - {cultivar_stats['max']:.0f} kg/ha
+**Standard Deviation:** {cultivar_stats['std']:.0f}
+{f"**Ranking:** #{cultivar_rank} out of {len(all_cultivars)} cultivars" if cultivar_rank else ""}
+
+### 🌾 **Dataset Comparison Context**
+
+| Metric | {cultivar} | All Cultivars | Difference |
+|--------|------------|---------------|------------|
+| Average {analysis_column} | {cultivar_stats['mean']:.0f} | {all_data_stats['mean']:.0f} | {cultivar_stats['mean'] - all_data_stats['mean']:+.0f} |
+| Median {analysis_column} | {cultivar_stats['median']:.0f} | {all_data_stats['median']:.0f} | {cultivar_stats['median'] - all_data_stats['median']:+.0f} |
+| Maximum {analysis_column} | {cultivar_stats['max']:.0f} | {all_data_stats['max']:.0f} | {cultivar_stats['max'] - all_data_stats['max']:+.0f} |
+
+### 📈 **Performance Analysis**
+
+"""
+    
+    # Add performance analysis
+    performance_vs_avg = ((cultivar_stats['mean'] - all_data_stats['mean']) / all_data_stats['mean']) * 100
+    
+    if performance_vs_avg > 10:
+        performance_desc = f"**Excellent** - {performance_vs_avg:.1f}% above dataset average"
+    elif performance_vs_avg > 0:
+        performance_desc = f"**Above Average** - {performance_vs_avg:.1f}% above dataset average"
+    elif performance_vs_avg > -10:
+        performance_desc = f"**Below Average** - {abs(performance_vs_avg):.1f}% below dataset average"
+    else:
+        performance_desc = f"**Poor** - {abs(performance_vs_avg):.1f}% below dataset average"
+    
+    response += f"• **{cultivar} Performance:** {performance_desc}\n"
+    response += f"• **Consistency:** {'High' if cultivar_stats['std'] < all_data_stats['std'] else 'Moderate' if cultivar_stats['std'] < all_data_stats['std'] * 1.2 else 'Variable'} (CV: {(cultivar_stats['std']/cultivar_stats['mean']*100):.1f}%)\n"
+    
+    # Add bean type context if available
+    if bean_type_stats:
+        response += f"\n### 🫘 **Bean Type Context**\n\n"
+        for bt, stats in bean_type_stats.items():
+            cultivar_vs_type = ((cultivar_stats['mean'] - stats['mean']) / stats['mean']) * 100
+            response += f"• **{bt.title()} Beans:** Avg {stats['mean']:.0f} kg/ha ({stats['count']} cultivars) - {cultivar} is {cultivar_vs_type:+.1f}% vs this group\n"
+    
+    # Add detailed trial information
+    response += f"\n### 📋 **{cultivar} Trial Details**\n\n"
+    
+    # Group by year and location for detailed breakdown
+    detailed_data = cultivar_data.groupby(['Year', 'Location']).agg({
+        analysis_column: ['mean', 'count']
+    }).round(0)
+    detailed_data.columns = ['Avg_Yield', 'Trials']
+    detailed_data = detailed_data.reset_index()
+    
+    if len(detailed_data) <= 20:  # Show details if not too many
+        response += detailed_data.to_markdown(index=False)
+    else:
+        # Show summary by year
+        yearly_summary = cultivar_data.groupby('Year').agg({
+            analysis_column: ['mean', 'count']
+        }).round(0)
+        yearly_summary.columns = ['Avg_Yield', 'Trials']
+        yearly_summary = yearly_summary.reset_index()
+        response += "**Yearly Summary:**\n\n" + yearly_summary.to_markdown(index=False)
+    
+    response += f"\n\n💡 **This provides actual yield data from our cultivar trials to compare with global production estimates.**"
+    
+    # Create visualization data
+    chart_data = create_scatter_chart_data(
+        df=df,
+        x_col="Maturity", 
+        y_col="Yield",
+        highlight_cultivar=cultivar,
+        filter_text=f"(Highlighting {cultivar})"
+    )
+    
+    return response, detailed_data.to_markdown(index=False) if len(detailed_data) <= 20 else yearly_summary.to_markdown(index=False), chart_data
