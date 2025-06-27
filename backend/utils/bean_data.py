@@ -2123,7 +2123,7 @@ function_schema = {
             "year_end": {"type": "integer", "description": "End year for range filtering"},
             "location": {"type": "string", "description": "Location code (e.g., WOOD, ELOR, HARR)"},
             "bean_type": {"type": "string", "description": "Type of bean: 'white bean' or 'coloured bean'"},
-            "trial_group": {"type": "string", "description": "Trial group: 'major' or 'minor'"},
+            "trial_group": {"type": "string", "description": "Trial group classification: 'major' (main trials) or 'minor' (secondary trials) - NOT bean color"},
             "cultivar": {"type": "string", "description": "Cultivar name or partial name to search for"},
             "min_yield": {"type": "number", "description": "Minimum yield threshold"},
             "max_maturity": {"type": "number", "description": "Maximum maturity days"},
