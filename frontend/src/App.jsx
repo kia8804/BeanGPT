@@ -470,7 +470,7 @@ export default function App() {
                 <img 
                   src="/images/UniversityOfGuelphLogo.png" 
                   alt="University of Guelph"
-                  className="w-10 h-12 object-contain"
+                  className="w-10 h-10 object-contain"
                 />
                 <div>
                   <h1 className="text-lg font-bold text-gray-900 dark:text-white">BeanGPT</h1>
@@ -571,12 +571,12 @@ export default function App() {
 
         {/* Dry Bean Breeding Program Logo */}
         {!sidebarCollapsed && (
-          <div className="px-4 py-4">
+          <div className="px-4 py-2">
             <div className="flex justify-center">
               <img 
                 src="/images/DryBeanBreedingLogo.png" 
                 alt="Dry Bean Breeding & Computational Biology Program"
-                className="w-48 h-24 object-contain"
+                className="w-40 h-20 object-contain"
               />
             </div>
           </div>
