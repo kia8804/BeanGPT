@@ -467,9 +467,11 @@ export default function App() {
           <div className="flex items-center justify-between">
             {!sidebarCollapsed && (
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
-                  <FaDna className="text-white text-lg" />
-                </div>
+                <img 
+                  src="/images/UniversityOfGuelphLogo.png" 
+                  alt="University of Guelph"
+                  className="w-10 h-12 object-contain"
+                />
                 <div>
                   <h1 className="text-lg font-bold text-gray-900 dark:text-white">BeanGPT</h1>
                   <p className="text-xs text-gray-500 dark:text-slate-400">Powered by Beans</p>
@@ -532,12 +534,26 @@ export default function App() {
             <div className="space-y-2">
                   <div>
                     <p className="text-xs font-medium text-gray-700 dark:text-slate-300">Developed by:</p>
-                    <p className="text-xs text-gray-600 dark:text-slate-400">Kiarash Mirkamandari</p>
+                    <a 
+                      href="https://www.linkedin.com/in/kiarash-mirkamandari/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline transition-colors"
+                    >
+                      Kiarash Mirkamandari
+                    </a>
                   </div>
                   
                   <div>
                     <p className="text-xs font-medium text-gray-700 dark:text-slate-300">Supervised by:</p>
-                    <p className="text-xs text-gray-600 dark:text-slate-400">Dr. Mohsen Yoosefzadeh Najafabadi</p>
+                    <a 
+                      href="https://www.linkedin.com/in/mohsen-yoosefzadeh-n-82365bb2/" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline transition-colors"
+                    >
+                      Dr. Mohsen Yoosefzadeh Najafabadi
+                    </a>
                     <p className="text-xs text-gray-500 dark:text-slate-500">Principal Investigator</p>
                   </div>
                   
@@ -549,6 +565,19 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Dry Bean Breeding Program Logo */}
+        {!sidebarCollapsed && (
+          <div className="px-4 py-4">
+            <div className="flex justify-center">
+              <img 
+                src="/images/DryBeanBreedingLogo.png" 
+                alt="Dry Bean Breeding & Computational Biology Program"
+                className="w-48 h-24 object-contain"
+              />
             </div>
           </div>
         )}

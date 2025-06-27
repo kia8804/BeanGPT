@@ -1063,7 +1063,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         # Check specifically for OAC cultivars
         oac_cultivars = [str(c) for c in df_trials['Cultivar Name'].dropna().unique() if 'oac' in str(c).lower()]
         print(f"🔍 OAC cultivars found: {oac_cultivars}")
-    
+
     df = df_trials.copy()
 
     # 1) Extract filters and analysis parameters from args

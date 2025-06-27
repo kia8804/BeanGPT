@@ -40,6 +40,7 @@ def extract_gene_mentions(text: str) -> tuple[list[str], set[str], set[str]]:
         "- Gene family names when asked about specifically (e.g., MYB, WRKY, NAC, HSP, LEA when directly queried).\n"
         "- Specifically named proteins with unique identifiers (e.g., aquaporin PIP2;1, catalase CAT1, HSP70, etc.).\n"
         "- Named enzyme genes with identifiers (e.g., SOD1, APX2, RBOH, etc.).\n"
+        "- Well-known gene names in plant biology, even if short, when explicitly mentioned as genes (e.g., Asp gene, Phg gene, Fin gene, etc.).\n"
         "- Specific, named metabolites or phytochemicals (e.g., abscisic acid, proline, raffinose, etc.) directly linked to the molecular genetics of P. vulgaris.\n"
         "- Named non-coding RNAs or transcriptome elements where a unique identifier or locus is given (e.g., miR156, Phvul.TCONS_00058903, etc.).\n\n"
         "STRICTLY EXCLUDE:\n"
@@ -48,9 +49,9 @@ def extract_gene_mentions(text: str) -> tuple[list[str], set[str], set[str]]:
         "- Generic, non-specific terms like QTL, general molecular markers, yield, drought tolerance, resistance gene, root traits, pod traits, etc.\n"
         "- Chromosomal locations, linkage groups, or genome build references (e.g., Pv04, chromosome 3, LG5, etc.).\n"
         "- Any population type or breeding/population code (e.g., RIL, F2, BC, DH, accession numbers).\n"
-        "- Classes or families of molecules, genes, proteins, metabolites, or traits without a unique identifier (e.g., aquaporin without identifier, NAC without number, flavonoid if not a specific compound, LEA proteins without gene name).\n\n"
+        "- Classes or families of molecules, genes, proteins, metabolites, or traits without a unique identifier (e.g., aquaporin without identifier, NAC without number, flavonoid if not a specific compound, LEA proteins without gene name). EXCEPTION: Include well-known gene names like Asp, Phg, Fin when explicitly mentioned as genes.\n\n"
         "Return a JSON array of strings, where each string is a validated, specifically named gene, metabolite, transcript, protein, enzyme, or molecular marker. If nothing meeting the criteria is found, return an empty array.\n\n"
-        "Be conservative but include commonly queried gene families (MYB, WRKY, NAC, HSP, LEA, etc.) when directly asked about. When in doubt about specific identifiers, exclude, but include gene family names when they are the main subject of the query.\n\n"
+        "Be conservative but include commonly queried gene families (MYB, WRKY, NAC, HSP, LEA, etc.) when directly asked about. Include well-known gene names (like Asp, Phg, Fin) when explicitly mentioned as genes, even if they seem short or simple.\n\n"
         "IMPORTANT: Only extract terms that are explicitly mentioned in the provided text. Do not infer or add terms that are not directly present."
     )
 
