@@ -30,7 +30,7 @@ TOP_K = 8
 ALPHA = 0.6
 
 # Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Initialize Pinecone
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
@@ -145,24 +145,52 @@ def combine_scores(bge_scores: dict, pub_scores: dict, alpha: float = ALPHA) -> 
     return combined
 
 # --- Question Processing ---
-def is_genetics_question(question: str) -> bool:
-    prompt = f"""
-    Decide if the question is about genetics or molecular biology in dry beans or plants.
-
-    Say true if it's about genes, gene expression, resistance genes, molecular traits, or genetic mapping.
-    Say false if it's only about general agriculture, yield, soil, or farming without genetics.
-    Only return true or false.
-
-    Question:
-    {question}
+def is_genetics_question(question: str, api_key: str) -> bool:
     """
-    response = client.chat.completions.create(
-        model="gpt-4o", messages=[{"role": "user", "content": prompt}], temperature=0
-    )
-    answer = response.choices[0].message.content.strip().lower()
-    return "true" in answer
+    Determine if a question is about genetics/molecular biology using OpenAI.
+    Now requires user-provided API key.
+    """
+    api_key = api_key or os.getenv("OPENAI_API_KEY")  # fallback to env var
+    if not api_key:
+        raise ValueError("OpenAI API key is required")
+    
+    client = OpenAI(api_key=api_key)
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a classifier that determines if a question is about genetics, molecular biology, "
+                        "gene function, protein analysis, or genomics. Respond with only 'true' or 'false'.\n\n"
+                        "Questions about yield data, cultivar performance, trial results, location comparisons, "
+                        "or statistical analysis of agricultural data should be classified as 'false'.\n\n"
+                        "Questions about genes, proteins, molecular mechanisms, genetic markers, "
+                        "or biological processes should be classified as 'true'."
+                    ),
+                },
+                {"role": "user", "content": question},
+            ],
+            temperature=0,
+            max_tokens=10,
+        )
+        
+        result = response.choices[0].message.content.strip().lower()
+        return result == "true"
+    except Exception as e:
+        print(f"Error in genetics classification: {e}")
+        return False
 
-def query_openai(context: str, source_list: List[str], question: str, conversation_history: List[Dict] = None) -> str:
+def query_openai(context: str, source_list: List[str], question: str, conversation_history: List[Dict] = None, api_key: str = None) -> str:
+    # Create client with user-provided API key
+    api_key = api_key or os.getenv("OPENAI_API_KEY")  # fallback to env var
+    if not api_key:
+        raise ValueError("OpenAI API key is required")
+    
+    client = OpenAI(api_key=api_key)
+    
     messages = [
         {
             "role": "system",
@@ -204,7 +232,14 @@ def query_openai(context: str, source_list: List[str], question: str, conversati
     )
     return response.choices[0].message.content.strip()
 
-def query_openai_stream(context: str, source_list: List[str], question: str, conversation_history: List[Dict] = None):
+def query_openai_stream(context: str, source_list: List[str], question: str, conversation_history: List[Dict] = None, api_key: str = None):
+    # Create client with user-provided API key
+    api_key = api_key or os.getenv("OPENAI_API_KEY")  # fallback to env var
+    if not api_key:
+        raise ValueError("OpenAI API key is required")
+    
+    client = OpenAI(api_key=api_key)
+    
     messages = [
         {
             "role": "system",
@@ -265,6 +300,14 @@ def generate_suggested_questions(
 ) -> List[str]:
     """Generates a list of suggested follow-up questions based on the provided answer and data."""
 
+    # Get API key from environment
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        print("No OpenAI API key found, skipping suggested questions generation")
+        return []
+    
+    client = OpenAI(api_key=api_key)
+
     prompt = (
         "Based on the following assistant response (answer and potentially data/sources), "
         "generate a concise list of 3-5 relevant follow-up questions that a user might ask. "
@@ -309,386 +352,250 @@ def generate_suggested_questions(
         print(f"Error generating suggested questions: {e}")
         return []
 
-def answer_question_stream(question: str, conversation_history: List[Dict] = None):
-    """Stream the answer with real-time generation"""
+def answer_question_stream(question: str, conversation_history: List[Dict] = None, api_key: str = None):
+    """
+    Stream the answer to a question with progress updates.
+    Now requires user-provided API key.
+    """
+    api_key = api_key or os.getenv("OPENAI_API_KEY")  # fallback to env var
+    if not api_key:
+        raise ValueError("OpenAI API key is required")
     
-    print(f"🔍 STREAMING QUESTION: {question}")
+    # Create client with user-provided API key
+    client = OpenAI(api_key=api_key)
     
-    # Check if it might be bean data query first - use broader, more flexible keywords
-    bean_data_keywords = [
-        "average", "mean", "maximum", "minimum", "highest", "lowest", 
-        "yield", "performance", "analysis", "compare", "cultivar", "variety",
-        "chart", "plot", "graph", "visualization", "show", "display", "data",
-        "production", "producing", "rank", "ranking"
-    ]
-    keywords_found = [keyword for keyword in bean_data_keywords if keyword in question.lower()]
+    # Add current question to conversation history for context
+    if conversation_history is None:
+        conversation_history = []
     
-    # Also check if this is a follow-up to previous bean data query
-    has_bean_context = False
-    if conversation_history:
-        for msg in conversation_history[-3:]:  # Check last 3 messages
-            if msg.get('role') == 'assistant' and msg.get('content'):
-                content = msg['content'].lower()
-                if any(indicator in content for indicator in [
-                    'scatter plot', 'bean data analysis', 'cultivar', 'yield', 'maturity',
-                    'white bean', 'coloured bean', 'location', 'trial', 'dataset', 'filter:'
-                ]):
-                    has_bean_context = True
-                    break
+    current_conversation = conversation_history + [{"role": "user", "content": question}]
     
-    # Check for follow-up requests (more flexible)
-    followup_terms = [
-        'chart', 'plot', 'graph', 'visualization', 'same question', 'different', 'another', 
-        'show me', 'generate', 'create', 'make', 'display', 'with', 'using', 'for'
-    ]
-    is_followup = has_bean_context and any(term in question.lower() for term in followup_terms)
+    # Check if this is a genetics question
+    is_genetic = is_genetics_question(question, api_key)
+    print(f"🧪 Is this a genetics question? {is_genetic}")
     
-    print(f"🔍 Has bean data keywords? {bool(keywords_found)} - Found: {keywords_found}")
-    print(f"🔍 Has bean context from history? {has_bean_context}")
-    print(f"🔍 Is follow-up? {is_followup}")
-    
-    # Initialize bean data variables
-    bean_data_preview = None
-    bean_data_table = None
-    bean_data_chart = None
-    
-    if keywords_found or is_followup:
-        print("🔄 Processing bean data function call...")
-        
-        # Send progress update for dataset query
-        yield {"type": "progress", "data": {"step": "dataset", "detail": "Checking cultivar performance database"}}
-        
-        try:
-            # Analyze conversation history for bean data context
-            has_bean_data_context = False
-            if conversation_history:
-                for msg in conversation_history[-4:]:  # Check last 4 messages
-                    if msg.get('role') == 'assistant' and msg.get('content'):
-                        content = msg['content'].lower()
-                        if any(indicator in content for indicator in [
-                            'scatter plot', 'bean data analysis', 'cultivar', 'yield', 'maturity',
-                            'white bean', 'coloured bean', 'location', 'trial', 'dataset'
-                        ]):
-                            has_bean_data_context = True
-                            break
-            
-            # Enhanced system prompt that considers conversation context
-            system_prompt = (
-                "You are a dry bean research platform. If the user asks for bean performance "
-                "data (like yield, maturity, cultivar names), you should call the appropriate function. "
-                "IMPORTANT: For comparison requests involving specific cultivars (like OAC Seal), rankings, "
-                "or yield comparisons, always use the bean data function to provide specific numerical data "
-                "from the Merged_Bean_Dataset rather than generic responses. "
-                "When users ask about 'production' or 'dry bean production', ALWAYS use analysis_column='Yield' since production equals yield per hectare. "
-                "For ranking questions mentioning cultivars, ALWAYS extract the cultivar name and use analysis_type='compare'. "
-                "CRITICAL PARAMETER MAPPING: "
-                "- bean_type: Use for 'white bean' or 'coloured bean' (NOT for major/minor) "
-                "- trial_group: Use for 'major' or 'minor' trials (NOT for bean color) "
-                "- When users mention 'minor bean types' or 'major bean types', they mean trial_group='minor' or trial_group='major' "
-                "- When users mention bean colors or varieties, use bean_type parameter "
-                "CRITICAL: When you see 'OAC Seal' or any cultivar name in the user query, you MUST include cultivar='OAC Seal' parameter. "
-                "EXAMPLE: For 'compare with OAC Seal' you MUST include cultivar='OAC Seal' in your function call. "
-                "EXAMPLE: For 'vs OAC Steam' you MUST include cultivar='OAC Steam' in your function call. "
-                "For visualization requests, analyze the user's intent and data context to choose the most "
-                "appropriate analysis_type and parameters. Guidelines: "
-                "- For ranking/comparison requests (e.g., 'rank countries vs OAC Seal', 'compare production with OAC Seal'), "
-                "  use analysis_type='compare' with cultivar='OAC Seal' or the specific cultivar name mentioned "
-                "- When users mention specific cultivar names (OAC Seal, Seal, OAC Steam, etc.), ALWAYS include cultivar parameter "
-                "- For cultivar performance questions, use analysis_type='cultivar_analysis' "
-                "- When comparing global production to specific cultivars, use the cultivar parameter "
-                "- For general chart/visualization requests (including pie charts, bar charts, etc.), use analysis_type='visualization' "
-                "- When user requests a specific chart type (pie chart, bar chart, line chart, histogram, area chart, scatter plot), "
-                "  use analysis_type='visualization' AND set chart_type parameter to the specific type: "
-                "  'pie', 'bar', 'line', 'histogram', 'area', or 'scatter' "
-                "- For specific scatter plot requests, you can also use analysis_type='scatter' "
-                "- For location-focused analysis, use analysis_type='location_analysis' "
-                "- For cultivar-focused analysis, use analysis_type='cultivar_analysis' "
-                "- For year-over-year trends, use analysis_type='yearly_average' or 'trend' "
-                "- For basic statistics, use analysis_type='average', 'max', 'min', etc. "
-                "Always include relevant filters like bean_type, year, location, and cultivar based on the user's request. "
-            )
-            
-            if has_bean_data_context:
-                system_prompt += (
-                    "IMPORTANT: The conversation history shows previous bean data queries. "
-                    "For follow-up visualization requests, extract the context and filters from the "
-                    "conversation history (bean_type, year, location, etc.) and apply them to create "
-                    "a meaningful visualization. When user asks for a specific chart type (like 'pie chart', "
-                    "'bar chart'), use analysis_type='visualization' and set chart_type to the requested type. "
-                )
-            
-            # Let GPT decide whether to call the bean function (same as non-streaming version)
-            response = client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    # Add conversation history if available
-                    *(conversation_history or []),
-                    {"role": "user", "content": question},
-                ],
-                functions=[function_schema],
-                function_call="auto",
-            )
+    yield {"type": "progress", "data": {"step": "analysis", "detail": "Analyzing question type"}}
 
-            choice = response.choices[0]
-            print(f"🔄 GPT function call decision: {choice.finish_reason}")
+    if not is_genetic:
+        yield {"type": "progress", "data": {"step": "dataset", "detail": "Checking cultivar database"}}
+        
+        # Let GPT decide whether to call the bean function
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a dry bean main platform. If the user asks for bean performance "
+                        "data (like yield, maturity, cultivar names), you should call the appropriate function."
+                    ),
+                },
+                {"role": "user", "content": question},
+            ],
+            functions=[function_schema],
+            function_call="auto",
+        )
+
+        choice = response.choices[0]
+        if choice.finish_reason == "function_call":
+            yield {"type": "progress", "data": {"step": "processing", "detail": "Processing cultivar data"}}
             
-            if choice.finish_reason == "function_call":
-                call = choice.message.function_call
-                print(f"🔄 Function call: {call.name}")
+            call = choice.message.function_call
+            if call.name == "query_bean_data":
+                args = json.loads(call.arguments)
+                preview, full_md, chart_data = answer_bean_query(args)
                 
-                if call.name == "query_bean_data":
-                    # Send progress update for data processing
-                    yield {"type": "progress", "data": {"step": "processing", "detail": "Processing dataset query"}}
+                if preview and not preview.strip().startswith("## 🔍 **Dataset Query Results**\n\nNo matching"):
+                    yield {"type": "progress", "data": {"step": "dataset_success", "detail": "Found matching data"}}
                     
-                    args = json.loads(call.arguments)
-                    # Add the original question for cultivar detection
-                    args['original_question'] = question
+                    # Generate natural language summary
+                    yield {"type": "progress", "data": {"step": "generation", "detail": "Creating analysis summary"}}
                     
-                    # Map "production" to "Yield" if analysis_column is not set or contains production
-                    if 'analysis_column' not in args or not args.get('analysis_column'):
-                        if 'production' in question.lower():
-                            args['analysis_column'] = 'Yield'
-                    elif args.get('analysis_column') and 'production' in args['analysis_column'].lower():
-                        args['analysis_column'] = 'Yield'
+                    summary_response = client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a dry bean genetics research assistant. The user asked a question about cultivar performance data, "
+                                    "and we found matching data in our dataset. Your job is to provide a comprehensive, natural language summary "
+                                    "of the data results, formatted in clean professional markdown.\n\n"
+                                    
+                                    "Guidelines:\n"
+                                    "- Be thorough and analytical in your interpretation\n"
+                                    "- Use **bold** for key metrics, findings, and cultivar names\n"
+                                    "- Use bullet points for lists and comparisons\n"
+                                    "- Include specific numbers and statistics from the data\n"
+                                    "- Provide actionable insights for researchers\n"
+                                    "- Reference data directly (e.g., 'The data shows...')\n"
+                                    "- Don't just repeat the table - interpret and explain patterns\n"
+                                    "- If charts are included, reference them appropriately\n\n"
+                                    
+                                    "Answer the user's original question directly using the data provided."
+                                ),
+                            }
+                        ] + current_conversation + [
+                            {
+                                "role": "assistant",
+                                "content": f"Based on your question, I found relevant cultivar performance data:\n\n{preview}"
+                            },
+                            {
+                                "role": "user",
+                                "content": f"Please provide a comprehensive analysis of this data to answer my original question: '{question}'"
+                            }
+                        ],
+                        temperature=0.3,
+                    )
                     
-                    print(f"🔄 Function arguments: {args}")
+                    final_answer = summary_response.choices[0].message.content.strip()
                     
-                    preview, full_markdown_table, chart_data = answer_bean_query(args)
-                    print(f"🔄 Bean query result - Preview length: {len(preview) if preview else 0}")
-                    print(f"🔄 Bean query result - Full table length: {len(full_markdown_table) if full_markdown_table else 0}")
+                    # Stream the complete answer
+                    for char in final_answer:
+                        yield {"type": "content", "data": char}
                     
-                    if preview and len(preview) > 20:  # Valid response
-                        print("✅ Streaming bean data response...")
-                        
-                        # Send progress update for successful dataset result
-                        yield {"type": "progress", "data": {"step": "dataset_success", "detail": "Found matching data in cultivar database"}}
-                        
-                        # Stream the bean data result
-                        for char in preview:
-                            yield {"type": "content", "data": char}
-                        
-                        # Add transition to continue with research literature
-                        transition_message = "\n\n---\n\n## 📚 Additional Research Context\n\nSearching scientific publications for additional insights and context...\n\n"
-                        
-                        for char in transition_message:
-                            yield {"type": "content", "data": char}
-                        
-                        # Store bean data results for later metadata combination
-                        bean_data_preview = preview
-                        bean_data_table = full_markdown_table
-                        bean_data_chart = chart_data
-                        print("✅ Bean data processing completed, continuing with RAG...")
-                    else:
-                        print(f"❌ Preview too short or empty: {len(preview) if preview else 0}")
-                        
-                        # Send progress update for fallback
-                        yield {"type": "progress", "data": {"step": "fallback", "detail": "No dataset matches, searching literature"}}
-                        
-                        # Stream transition message for fallback to research papers
-                        transition_message = "## 🔍 Dataset Search Results\n\nNo specific data found in our cultivar performance dataset for this query.\n\n---\n\n## 📚 Research Literature Search\n\nSearching scientific publications for relevant information...\n\n"
-                        
-                        for char in transition_message:
-                            yield {"type": "content", "data": char}
-                        
-                        print("🔄 Falling back to research paper search...")
+                    # Send metadata
+                    yield {
+                        "type": "metadata",
+                        "data": {
+                            "sources": [],
+                            "genes": [],
+                            "full_markdown_table": full_md,
+                            "chart_data": chart_data,
+                            "suggested_questions": []
+                        }
+                    }
+                    return
                 else:
-                    print(f"❌ Unexpected function call: {call.name}")
-            else:
-                print("❌ GPT decided not to use function call, falling back to RAG")
-                
-                # Send progress update for fallback
-                yield {"type": "progress", "data": {"step": "fallback", "detail": "Query outside dataset scope, searching literature"}}
-                
-                # Stream transition message for fallback to research papers
-                transition_message = "## 🔍 Query Analysis\n\nThis query appears to be outside our structured dataset scope.\n\n---\n\n## 📚 Research Literature Search\n\nSearching scientific publications for relevant information...\n\n"
-                
-                for char in transition_message:
-                    yield {"type": "content", "data": char}
-                
-        except Exception as e:
-            print(f"❌ Bean data query failed: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            # Send progress update for error fallback
-            yield {"type": "progress", "data": {"step": "error_fallback", "detail": "Dataset error, searching literature"}}
-            
-            # Stream transition message for error fallback
-            transition_message = "## 🔍 Dataset Search\n\nEncountered an issue accessing the cultivar dataset.\n\n---\n\n## 📚 Research Literature Search\n\nSearching scientific publications for relevant information...\n\n"
-            
-            for char in transition_message:
-                yield {"type": "content", "data": char}
-            
-            print("🔄 Falling back to research paper search due to error...")
-            # Continue with normal RAG pipeline
-    else:
-        print("❌ No bean data keywords found, using RAG pipeline")
+                    # No data found, fall back to literature search
+                    yield {"type": "progress", "data": {"step": "fallback", "detail": "No data found, searching literature"}}
+
+        # If no function call or no data found, fall back to natural response
+        yield {"type": "progress", "data": {"step": "generation", "detail": "Generating response"}}
+        
+        response_text = response.choices[0].message.content.strip()
+        for char in response_text:
+            yield {"type": "content", "data": char}
+        
+        yield {
+            "type": "metadata", 
+            "data": {
+                "sources": [], 
+                "genes": [], 
+                "full_markdown_table": "", 
+                "suggested_questions": []
+            }
+        }
+        return
+
+    # --- Genetics question flow ---
+    yield {"type": "progress", "data": {"step": "embeddings", "detail": "Processing semantic embeddings"}}
     
-    # Normal RAG pipeline with streaming
-    print("🔬 Starting RAG pipeline...")
+    bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
+    pub_vec = embed_query_pubmedbert(question)
     
-    # Send progress update for embedding generation
-    yield {"type": "progress", "data": {"step": "embeddings", "detail": "Generating semantic embeddings"}}
+    yield {"type": "progress", "data": {"step": "search", "detail": "Searching literature database"}}
     
-    bge_embedding = bge_model.encode(question).tolist()
-    pubmedbert_embedding = embed_query_pubmedbert(question)
-    
-    # Send progress update for database search
-    yield {"type": "progress", "data": {"step": "search", "detail": "Searching research database"}}
-    
-    bge_matches = query_pinecone(BGE_INDEX_NAME, bge_embedding).to_dict()["matches"]
-    pubmedbert_matches = query_pinecone(PUBMEDBERT_INDEX_NAME, pubmedbert_embedding).to_dict()["matches"]
-    
-    bge_scores = normalize_scores(bge_matches)
-    pubmedbert_scores = normalize_scores(pubmedbert_matches)
-    combined_scores = combine_scores(bge_scores, pubmedbert_scores)
-    
+    bge_res = query_pinecone(BGE_INDEX_NAME, bge_vec)
+    pub_res = query_pinecone(PUBMEDBERT_INDEX_NAME, pub_vec)
+
+    bge_scores = normalize_scores(bge_res["matches"])
+    pub_scores = normalize_scores(pub_res["matches"])
+    combined_scores = combine_scores(bge_scores, pub_scores)
+
     top_sources = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:TOP_K]
-    source_list = [source for source, _ in top_sources]
+    top_dois = [src for src, _ in top_sources]
     
-    context, confirmed_dois = get_rag_context_from_dois(source_list)
+    yield {"type": "progress", "data": {"step": "papers", "detail": f"Found {len(top_dois)} relevant papers"}}
     
-    # Send progress update with actual paper count
-    yield {"type": "progress", "data": {"step": "papers", "detail": f"Retrieved {len(confirmed_dois)} relevant papers", "paper_count": len(confirmed_dois)}}
+    print("🔎 Top DOIs from Pinecone:", top_dois)
+
+    context, source_list = get_rag_context_from_dois(top_dois)
     
-    # Send progress update for AI generation
-    yield {"type": "progress", "data": {"step": "generation", "detail": "Generating AI response"}}
-    
-    # Stream the OpenAI response
-    full_answer = ""
-    try:
-        for chunk in query_openai_stream(context, source_list, question, conversation_history):
-            full_answer += chunk
-            yield {"type": "content", "data": chunk}
-    except Exception as e:
-        print(f"❌ Error in OpenAI streaming: {e}")
-        # Continue with a fallback message
-        fallback_msg = f"\n\n*Note: Response generation encountered an issue. Continuing with available data...*\n\n"
-        full_answer += fallback_msg
-        yield {"type": "content", "data": fallback_msg}
-    
-    # Send progress update for gene extraction
+    yield {"type": "progress", "data": {"step": "generation", "detail": "Synthesizing findings with AI"}}
+
+    # Stream the response
+    for chunk in query_openai_stream(context, source_list, question, conversation_history, api_key):
+        yield {"type": "content", "data": chunk}
+
     yield {"type": "progress", "data": {"step": "genes", "detail": "Analyzing genetic elements"}}
+
+    # Get the full response for gene extraction
+    full_response = query_openai(context, source_list, question, conversation_history, api_key)
     
     # Extract genes from the complete answer
     print("🧬 Extracting gene mentions...")
-    try:
-        gene_mentions, db_hits, gpt_hits = extract_gene_mentions(full_answer)
-        print(f"Found gene mentions: {gene_mentions}")
-    except Exception as e:
-        print(f"❌ Error in gene extraction: {e}")
-        gene_mentions, db_hits, gpt_hits = [], set(), set()
+    gene_mentions, db_hits, gpt_hits = extract_gene_mentions(full_response)
+    print(f"Found gene mentions: {gene_mentions}")
 
     # Map genes to their summaries with preview URLs
     gene_summaries = []
-    try:
-        for gene in gene_mentions:
-            # db_hits now contains GPT genes that were validated against databases
-            # gpt_hits contains all GPT genes
-            # So we don't need the possible_flag logic anymore since all genes come from GPT
-            possible_flag = False
-            gene_info = map_to_gene_id(gene)
-            if gene_info:
-                if gene_info["source"] == "NCBI":
-                    preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_info['gene_id']}"
-                    gene_summaries.append({
-                        "name": gene,
-                        "summary": f"![NCBI Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
-                        "link": preview_url,
-                        "source": "NCBI Gene Database" if not possible_flag else "NCBI Gene Database (Possible Match)",
-                        "description": gene_info['description']
-                    })
-                elif gene_info["source"] == "UniProt":
-                    preview_url = f"https://www.uniprot.org/uniprotkb/{gene_info['entry']}"
-                    gene_summaries.append({
-                        "name": gene,
-                        "summary": f"![UniProt Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
-                        "link": preview_url,
-                        "source": "UniProt Protein Database" if not possible_flag else "UniProt Protein Database (Possible Match)",
-                        "description": gene_info['description']
-                    })
-                elif gene_info["source"] == "GPT-4o":
-                    gene_summaries.append({
-                        "name": gene,
-                        "summary": f"- {gene_info['description']}\n- Generated by AI analysis",
-                        "source": "AI Analysis" if not possible_flag else "AI Analysis (Possible Match)",
-                        "description": gene_info['description'],
-                        "generated": True
-                    })
-                else:
-                    source_label = gene_info['source'] if not possible_flag else f"Possible {gene_info['source']}"
-                    gene_summaries.append({
-                        "name": gene,
-                        "summary": f"- Description: `{gene_info['description']}`\n- Source: {source_label}",
-                        "source": source_label,
-                        "description": gene_info['description']
-                    })
-            else:
-                # Gene identified but not found in any database
+    for gene in gene_mentions:
+        # db_hits now contains GPT genes that were validated against databases
+        # gpt_hits contains all GPT genes
+        # So we don't need the possible_flag logic anymore since all genes come from GPT
+        possible_flag = False
+        gene_info = map_to_gene_id(gene)
+        if gene_info:
+            if gene_info["source"] == "NCBI":
+                preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_info['gene_id']}"
                 gene_summaries.append({
                     "name": gene,
-                    "summary": f"- Genetic element mentioned in context\n- No database match found",
-                    "source": "Literature Reference" if not possible_flag else "Literature Reference (Possible Match)",
-                    "description": f"This genetic element was identified in the research context but could not be matched to existing databases.",
-                    "not_found": True
+                    "summary": f"![NCBI Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
+                    "link": preview_url,
+                    "source": "NCBI Gene Database" if not possible_flag else "NCBI Gene Database (Possible Match)",
+                    "description": gene_info['description']
                 })
-    except Exception as e:
-        print(f"❌ Error in gene mapping: {e}")
-        # Continue with empty gene summaries
-    
-    # Send progress update for final processing
-    yield {"type": "progress", "data": {"step": "finalizing", "detail": "Preparing final response"}}
-    
-    # Combine bean data and RAG answer for suggested questions
-    combined_answer = ""
-    if bean_data_preview:
-        combined_answer = bean_data_preview + "\n\n" + full_answer
-    else:
-        combined_answer = full_answer
-    
-    try:
-        suggested_questions = generate_suggested_questions(
-            answer=combined_answer,
-            sources=confirmed_dois,
-            genes=gene_summaries,
-            full_markdown_table=bean_data_table
-        )
-    except Exception as e:
-        print(f"❌ Error generating suggested questions: {e}")
-        suggested_questions = []
-    
-    # Send final metadata
-    try:
-        yield {
-            "type": "metadata",
-            "data": {
-                "sources": confirmed_dois,
-                "genes": gene_summaries,
-                "full_markdown_table": bean_data_table,
-                "suggested_questions": suggested_questions,
-                "chart_data": bean_data_chart
-            }
+            elif gene_info["source"] == "UniProt":
+                preview_url = f"https://www.uniprot.org/uniprotkb/{gene_info['entry']}"
+                gene_summaries.append({
+                    "name": gene,
+                    "summary": f"![UniProt Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
+                    "link": preview_url,
+                    "source": "UniProt Protein Database" if not possible_flag else "UniProt Protein Database (Possible Match)",
+                    "description": gene_info['description']
+                })
+            elif gene_info["source"] == "GPT-4o":
+                gene_summaries.append({
+                    "name": gene,
+                    "summary": f"- {gene_info['description']}\n- Generated by AI analysis",
+                    "source": "AI Analysis" if not possible_flag else "AI Analysis (Possible Match)",
+                    "description": gene_info['description'],
+                    "generated": True
+                })
+            else:
+                source_label = gene_info['source'] if not possible_flag else f"Possible {gene_info['source']}"
+                gene_summaries.append({
+                    "name": gene,
+                    "summary": f"- Description: `{gene_info['description']}`\n- Source: {source_label}",
+                    "source": source_label,
+                    "description": gene_info['description']
+                })
+        else:
+            # Gene identified but not found in any database
+            gene_summaries.append({
+                "name": gene,
+                "summary": f"- Genetic element mentioned in context\n- No database match found",
+                "source": "Literature Reference" if not possible_flag else "Literature Reference (Possible Match)",
+                "description": f"This genetic element was identified in the research context but could not be matched to existing databases.",
+                "not_found": True
+            })
+
+    genes = gene_summaries
+
+    yield {"type": "progress", "data": {"step": "finalizing", "detail": "Completing analysis"}}
+
+    yield {
+        "type": "metadata",
+        "data": {
+            "sources": source_list,
+            "genes": genes,
+            "full_markdown_table": "",
+            "suggested_questions": []
         }
-    except Exception as e:
-        print(f"❌ Error sending final metadata: {e}")
-        # Send minimal metadata
-        yield {
-            "type": "metadata",
-            "data": {
-                "sources": confirmed_dois or [],
-                "genes": [],
-                "full_markdown_table": bean_data_table or "",
-                "suggested_questions": [],
-                "chart_data": bean_data_chart or {}
-            }
-        }
+    }
 
 def answer_question(question: str, conversation_history: List[Dict] = None) -> Tuple[str, List[str], List[dict], str]:
-    is_genetic = is_genetics_question(question)
+    is_genetic = is_genetics_question(question, os.getenv("OPENAI_API_KEY"))
     print(f"🧪 Is this a genetics question? {is_genetic}")
     
     # Initialize transition_message
@@ -865,7 +772,7 @@ def answer_question(question: str, conversation_history: List[Dict] = None) -> T
         print("⚠️ No RAG matches found for top DOIs.")
         return "No matching papers found in RAG corpus.", top_dois, [], ""
 
-    final_answer = query_openai(combined_context, top_dois, question, conversation_history)
+    final_answer = query_openai(combined_context, top_dois, question, conversation_history, os.getenv("OPENAI_API_KEY"))
     print("✅ Generated answer with context.")
 
     # Add transition message if needed
