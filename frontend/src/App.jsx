@@ -8,18 +8,21 @@ import {
 import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
 import remarkGfm from 'remark-gfm';
-import ChartComponent from './ChartComponent';
+import PlotlyChart from './components/PlotlyChart.jsx';
 
 const initialMessages = [
   {
     sender: 'assistant',
     text: `## Welcome to **BeanGPT** - Powered by Beans
 
-I'm your dedicated research assistant for **dry bean genetics and genomics**. I can help you with:
+I'm your dedicated research assistant for **dry bean genetics and breeding**. I can help you with:
 
 • **Gene Analysis** - Function, expression, and resistance mechanisms
+
 • **Cultivar Performance** - Yield data, trials, and comparative analysis  
+
 • **Research Literature** - PubMed papers and citations
+
 • **Statistical Analysis** - Performance metrics and data insights
 
 **Ready to start your research session?** Ask me about specific genes, cultivar performance, or browse recent studies.`,
@@ -444,7 +447,7 @@ export default function App() {
 
   const quickActions = [
     { icon: FaSearch, label: "Gene Lookup", action: () => setInput("Tell me about resistance genes in dry beans") },
-    { icon: FaFileAlt, label: "Literature", action: () => setInput("Find recent papers on dry bean genomics") }
+    { icon: FaFileAlt, label: "Literature", action: () => setInput("Find recent papers on dry bean breeding") }
   ];
 
   // Helper function to check if text contains inline citations
@@ -527,7 +530,7 @@ export default function App() {
               <div className={`p-4 rounded-lg ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
                 <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Research Platform</h4>
                 <p className="text-xs text-gray-600 dark:text-slate-400 leading-relaxed mb-3">
-                  BeanGPT is an AI-powered research platform for dry bean genetics and genomics analysis, 
+                  BeanGPT is an AI-powered research platform for dry bean genetics and breeding analysis, 
                   developed to support sustainable agriculture and breeding research.
                 </p>
                 
@@ -631,7 +634,7 @@ export default function App() {
             <div>
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Main Platform</h2>
               <p className="text-gray-600 dark:text-slate-400 text-sm mt-1">
-                Dry Bean Genetics & Genomics Analysis Platform
+                Dry Bean Genetics & Breeding Analysis Platform
               </p>
             </div>
             <div className="flex items-center space-x-4">
@@ -656,7 +659,7 @@ export default function App() {
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto min-h-0">
           <div className="p-6 space-y-6">
-            <div className="max-w-4xl mx-auto space-y-6">
+            <div className="max-w-6xl mx-auto space-y-6">
             {messages.map((msg, idx) => (
               <div
                 key={idx}
@@ -759,12 +762,12 @@ export default function App() {
                             {/* Check if chartData is a single chart object or multiple charts */}
                             {msg.chartData.type ? (
                               // Single chart object (from yearly_average, trend analysis)
-                              <ChartComponent chartData={msg.chartData} darkMode={darkMode} />
+                              <PlotlyChart chartData={msg.chartData} darkMode={darkMode} />
                             ) : (
                               // Multiple charts object (from regular table display)
                               Object.entries(msg.chartData).map(([key, chartData]) => (
                                 <div key={key} className="space-y-2">
-                                  <ChartComponent chartData={chartData} darkMode={darkMode} />
+                                  <PlotlyChart chartData={chartData} darkMode={darkMode} />
                                 </div>
                               ))
                             )}

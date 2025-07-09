@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import json
+import os
 from services.pipeline import answer_question_stream, generate_suggested_questions
 
 router = APIRouter()
@@ -21,9 +22,15 @@ class ChatResponse(BaseModel):
 @router.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     def generate():
+        # Get API key from environment
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            yield f"data: {json.dumps({'type': 'error', 'data': 'OpenAI API key not configured'})}\n\n"
+            return
+        
         # Stream the answer
         full_answer = ""
-        for chunk in answer_question_stream(request.question, request.conversation_history):
+        for chunk in answer_question_stream(request.question, request.conversation_history, api_key):
             if chunk["type"] == "content":
                 full_answer += chunk["data"]
                 yield f"data: {json.dumps(chunk)}\n\n"
