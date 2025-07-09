@@ -73,38 +73,6 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     # Get the original question for analysis
     original_question = args.get("original_question", "")
     
-    # Check if user explicitly wants a chart/visualization
-    chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate"]
-    wants_chart = any(keyword in original_question.lower() for keyword in chart_keywords)
-    
-    # Extract basic analysis parameters
-    analysis_type = args.get("analysis_type", "analysis")
-    analysis_column = args.get("analysis_column", "Yield")
-    chart_type = args.get("chart_type", None)
-
-    # CONDITIONAL CHART GENERATION - Only if explicitly requested
-    chart_data = {}
-    
-    if wants_chart and api_key and len(df) > 0:
-        print("🎯 Chart explicitly requested - generating visualization")
-        # Build a comprehensive prompt for GPT-4o
-        if chart_type:
-            chart_prompt = f"User request: {original_question}. Create a {chart_type} chart based on this request. Handle all filtering, grouping, and styling as needed."
-        elif analysis_type == "scatter":
-            chart_prompt = f"User request: {original_question}. Create a scatter plot based on this request. Handle all filtering, grouping, and styling as needed."
-        else:
-            chart_prompt = f"User request: {original_question}. Create the most appropriate visualization based on this request. Handle all filtering, grouping, and styling as needed."
-        
-        chart_data = create_smart_chart(df, chart_prompt, api_key, "")
-    elif wants_chart:
-        print("🎯 Chart requested but no API key available")
-    else:
-        print("📝 No chart requested - providing data analysis only")
-
-    # Build response focused on data analysis
-    response = f"## 📊 **Bean Data Analysis Results**\n\n"
-    response += f"**Dataset:** {len(df)} total records available for analysis\n\n"
-    
     # Add analysis details based on the question - dynamically detect cultivar names
     def find_mentioned_cultivars(question_text, df):
         """Find cultivar names mentioned in the question by checking against actual dataset."""
@@ -128,6 +96,148 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         return mentioned_cultivars
     
     mentioned_cultivars = find_mentioned_cultivars(original_question, df)
+    
+    # General dynamic disambiguation system
+    def detect_and_resolve_ambiguity(question, args, df):
+        """
+        Detect ambiguous references and attempt to resolve them using context.
+        Returns (resolved_entities, needs_clarification, clarification_message)
+        """
+        import re
+        
+        # Detect potential ambiguous patterns dynamically
+        ambiguous_patterns = [
+            r'\b(this|that|these|those)\s+(\w+)',  # "this cultivar", "that location"
+            r'\bit\b',  # standalone "it"
+            r'\bthe\s+(one|same|previous|last|first)\b',  # "the same", "the previous"
+        ]
+        
+        found_ambiguous = []
+        for pattern in ambiguous_patterns:
+            matches = re.findall(pattern, question.lower())
+            found_ambiguous.extend(matches)
+        
+        if not found_ambiguous:
+            return {}, False, ""
+        
+        # Try to resolve using function parameters (GPT's interpretation)
+        resolved_params = {}
+        for param, value in args.items():
+            if value and param != 'original_question' and param != 'api_key':
+                resolved_params[param] = value
+        
+        # If we have resolved parameters, validate them against the dataset
+        validation_errors = []
+        if resolved_params:
+            for param, value in resolved_params.items():
+                if param == 'cultivar':
+                    if not df[df['Cultivar Name'].str.contains(str(value), case=False, na=False)].empty:
+                        continue
+                    else:
+                        available = df['Cultivar Name'].dropna().unique()
+                        validation_errors.append(f"Cultivar '{value}' not found. Available: {', '.join([str(c) for c in available[:10]])}")
+                elif param == 'location':
+                    if str(value).upper() in df['Location'].unique():
+                        continue
+                    else:
+                        available = df['Location'].dropna().unique()
+                        validation_errors.append(f"Location '{value}' not found. Available: {', '.join(available)}")
+                elif param == 'year':
+                    if int(value) in df['Year'].dropna().unique():
+                        continue
+                    else:
+                        available = sorted(df['Year'].dropna().unique())
+                        validation_errors.append(f"Year {value} not found. Available: {min(available)}-{max(available)}")
+        
+        if validation_errors:
+            clarification = "**🤔 Reference Issue:**\n\n" + "\n".join(validation_errors) + "\n\n"
+            return {}, True, clarification
+        
+        if resolved_params:
+            return resolved_params, False, ""
+        
+        # If no parameters resolved, ask for clarification
+        clarification = "**🤔 Clarification Needed:**\n\n"
+        clarification += "Your question contains ambiguous references that I need help understanding. "
+        clarification += "Could you please be more specific?\n\n"
+        
+        # Provide context-aware suggestions based on available data
+        clarification += "**Available options:**\n"
+        if 'Cultivar Name' in df.columns:
+            cultivars = df['Cultivar Name'].dropna().unique()
+            clarification += f"• **Cultivars:** {', '.join([str(c) for c in cultivars[:10]])}\n"
+        if 'Location' in df.columns:
+            locations = df['Location'].dropna().unique()
+            clarification += f"• **Locations:** {', '.join(locations)}\n"
+        if 'Year' in df.columns:
+            years = sorted(df['Year'].dropna().unique())
+            clarification += f"• **Years:** {min(years)}-{max(years)}\n"
+        
+        clarification += "\n**Example:** Instead of 'plot this cultivar', try 'plot Dynasty yield over time'\n\n"
+        
+        return {}, True, clarification
+    
+    # Apply general disambiguation BEFORE chart generation
+    resolved_entities, needs_clarification, clarification_msg = detect_and_resolve_ambiguity(original_question, args, df)
+    
+    if needs_clarification:
+        response = f"## 📊 **Bean Data Analysis Results**\n\n"
+        response += clarification_msg
+        return response, "", {}
+                
+    # Update mentioned_cultivars based on resolved entities
+    if 'cultivar' in resolved_entities and not mentioned_cultivars:
+        cultivar_matches = df[df['Cultivar Name'].str.contains(resolved_entities['cultivar'], case=False, na=False)]['Cultivar Name'].unique()
+        if len(cultivar_matches) > 0:
+            mentioned_cultivars = [cultivar_matches[0]]
+    
+    # Check if user explicitly wants a chart/visualization
+    chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate"]
+    wants_chart = any(keyword in original_question.lower() for keyword in chart_keywords)
+    
+    # Extract basic analysis parameters
+    analysis_type = args.get("analysis_type", "analysis")
+    analysis_column = args.get("analysis_column", "Yield")
+    chart_type = args.get("chart_type", None)
+
+    # CONDITIONAL CHART GENERATION - Only if explicitly requested
+    chart_data = {}
+    
+    if wants_chart and api_key and len(df) > 0:
+        print("🎯 Chart explicitly requested - generating visualization")
+        
+        # Build enhanced prompt with resolved context
+        context_additions = []
+        if mentioned_cultivars:
+            context_additions.append(f"Focus on cultivar: {mentioned_cultivars[0]}")
+        if resolved_entities:
+            for param, value in resolved_entities.items():
+                if param == 'cultivar':
+                    context_additions.append(f"Specific cultivar: {value}")
+                elif param == 'location':
+                    context_additions.append(f"Specific location: {value}")
+                elif param == 'year':
+                    context_additions.append(f"Specific year: {value}")
+        
+        context_str = ". ".join(context_additions) if context_additions else ""
+        
+        # Build a comprehensive prompt for GPT-4o with resolved context
+        if chart_type:
+            chart_prompt = f"User request: {original_question}. {context_str}. Create a {chart_type} chart based on this request. Handle all filtering, grouping, and styling as needed."
+        elif analysis_type == "scatter":
+            chart_prompt = f"User request: {original_question}. {context_str}. Create a scatter plot based on this request. Handle all filtering, grouping, and styling as needed."
+        else:
+            chart_prompt = f"User request: {original_question}. {context_str}. Create the most appropriate visualization based on this request. Handle all filtering, grouping, and styling as needed."
+        
+        chart_data = create_smart_chart(df, chart_prompt, api_key, context_str)
+    elif wants_chart:
+        print("🎯 Chart requested but no API key available")
+    else:
+        print("📝 No chart requested - providing data analysis only")
+
+    # Build response focused on data analysis
+    response = f"## 📊 **Bean Data Analysis Results**\n\n"
+    response += f"**Dataset:** {len(df)} total records available for analysis\n\n"
     
     for cultivar_name in mentioned_cultivars:
         cultivar_data = df[df['Cultivar Name'] == cultivar_name]
@@ -168,7 +278,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
             response += f"\n\n*Sample of {len(sample_df)} rows from {len(df)} total records*"
     
     return response, "", chart_data
-
+                        
 # ---- GPT-compatible JSON Schema (unchanged) ----
 function_schema = {
     "name": "query_bean_data",

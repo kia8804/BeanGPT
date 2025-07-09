@@ -399,6 +399,9 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     Stream the answer to a question with progress updates.
     Now requires user-provided API key.
     """
+    # Immediately show thinking indicator
+    yield {"type": "progress", "data": {"step": "thinking", "detail": "Thinking..."}}
+    
     api_key = api_key or os.getenv("OPENAI_API_KEY")  # fallback to env var
     if not api_key:
         raise ValueError("OpenAI API key is required")
@@ -409,6 +412,7 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     # Initialize bean data variables
     bean_chart_data = {}
     bean_full_md = ""
+    bean_data_found = False
     
     # Add current question to conversation history for context
     if conversation_history is None:
@@ -435,15 +439,22 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
         
         if has_bean_keywords:
             # Let GPT decide whether to call the bean function
+            function_call_messages = [
+                {
+                    "role": "system",
+                    "content": "You are a dry bean research platform. If the user asks for bean performance data, charts, or cultivar analysis, call the appropriate function."
+                }
+            ]
+            
+            # Add conversation history for context
+            if conversation_history:
+                function_call_messages.extend(conversation_history)
+            
+            function_call_messages.append({"role": "user", "content": question})
+            
             response = client.chat.completions.create(
                 model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a dry bean research platform. If the user asks for bean performance data, charts, or cultivar analysis, call the appropriate function."
-                    },
-                    {"role": "user", "content": question},
-                ],
+                messages=function_call_messages,
                 functions=[function_schema],
                 function_call="auto",
             )
@@ -496,6 +507,7 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
                         # Store bean data for later metadata
                         bean_chart_data = chart_data
                         bean_full_md = full_md
+                        bean_data_found = True
                         
                         # Continue with research literature search
                         yield {"type": "progress", "data": {"step": "literature_search", "detail": "Searching research papers for additional insights"}}
@@ -555,8 +567,8 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     # Stream the response
     # If we have bean data, modify the question to include context
     rag_question = question
-    if 'bean_chart_data' in locals() and bean_chart_data:
-        rag_question = f"We successfully analyzed the bean data and generated charts for: '{question}'. Now provide additional research context from scientific literature about the genetic and biological factors related to this analysis."
+    if bean_data_found:
+        rag_question = f"We successfully analyzed the bean data for: '{question}'. Now provide additional research context from scientific literature about the genetic and biological factors related to this analysis."
     
     for chunk in query_openai_stream(context, source_list, rag_question, conversation_history, api_key):
         yield {"type": "content", "data": chunk}
@@ -565,8 +577,8 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
 
     # Get the full response for gene extraction (use same modified question as streaming)
     rag_question = question
-    if 'bean_chart_data' in locals() and bean_chart_data:
-        rag_question = f"We successfully analyzed the bean data and generated charts for: '{question}'. Now provide additional research context from scientific literature about the genetic and biological factors related to this analysis."
+    if bean_data_found:
+        rag_question = f"We successfully analyzed the bean data for: '{question}'. Now provide additional research context from scientific literature about the genetic and biological factors related to this analysis."
     
     full_response = query_openai(context, source_list, rag_question, conversation_history, api_key)
     
@@ -634,8 +646,8 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
 
     # Include bean data in metadata if available
     try:
-        final_chart_data = bean_chart_data if 'bean_chart_data' in locals() else {}
-        final_full_md = bean_full_md if 'bean_full_md' in locals() else ""
+        final_chart_data = bean_chart_data if bean_data_found else {}
+        final_full_md = bean_full_md if bean_data_found else ""
     except:
         final_chart_data = {}
         final_full_md = ""
@@ -677,15 +689,22 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
         if has_bean_keywords:
             try:
                 # Let GPT decide whether to call the bean function
+                function_call_messages = [
+                    {
+                        "role": "system",
+                        "content": "You are a dry bean research platform. If the user asks for bean performance data, charts, or cultivar analysis, call the appropriate function."
+                    }
+                ]
+                
+                # Add conversation history for context
+                if conversation_history:
+                    function_call_messages.extend(conversation_history)
+                
+                function_call_messages.append({"role": "user", "content": question})
+                
                 response = client.chat.completions.create(
                     model="gpt-4o",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are a dry bean research platform. If the user asks for bean performance data, charts, or cultivar analysis, call the appropriate function."
-                        },
-                        {"role": "user", "content": question},
-                    ],
+                    messages=function_call_messages,
                     functions=[function_schema],
                     function_call="auto",
                 )

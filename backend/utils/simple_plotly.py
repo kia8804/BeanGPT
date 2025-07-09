@@ -72,7 +72,11 @@ def ask_llm_for_plotly(prompt: str, df: pd.DataFrame, api_key: str) -> str:
         "- DATASET CONTEXT: This is Ontario research station data with locations like WOOD, WINC, STHM, AUBN, etc.\n"
         "- DO NOT filter for 'Ontario' - ALL data is already from Ontario research stations\n"
         "- Location column contains research station codes (WOOD, WINC, etc.), not country names\n"
+        "- Bean types in dataset: 'White Bean' (includes navy beans), 'Coloured Bean'\n"
+        "- IMPORTANT: Navy beans = White beans in this dataset. Use 'White Bean' not 'navy bean'\n"
         "- This is NOT global data - it's all Ontario bean trial data from different research stations\n"
+        "- CRITICAL: If user asks for global/world/country data that doesn't exist, create a chart showing available Ontario station data instead\n"
+        "- When global data is requested but unavailable, create an informative title like 'Ontario Research Station Comparison (Global Data Not Available)'\n"
         "- IMPORTANT: Before applying complex filters, check if the requested data actually exists in the dataset\n"
         "- If filtering for specific conditions, first check if those values exist in the relevant columns\n"
         "- If the requested conditions don't exist, create a simple chart with available data and a descriptive title explaining what's shown\n"
@@ -82,19 +86,51 @@ def ask_llm_for_plotly(prompt: str, df: pd.DataFrame, api_key: str) -> str:
         "- Includes professional styling with update_layout()\n"
         "- Sets height=450, width=900 for proper display\n"
         "- Uses clear axis labels with units (e.g., 'Yield (kg/ha)', 'Maturity (days)')\n"
-        "- Includes descriptive title\n"
-        "- For highlighting specific items: use large markers (size=15-20), bright colors (red/orange), distinctive symbols (star/diamond), and borders\n"
+        "- Includes descriptive title that reflects what data is actually shown\n"
+        "- For highlighting specific items:\n"
+        "  * Bar charts: use bright colors (red/orange) and line borders: marker=dict(color='red', line=dict(color='black', width=2))\n"
+        "  * Scatter plots: use large markers (size=15-20) and bright colors: marker=dict(size=15, color='red', line=dict(color='black', width=2))\n"
+        "  * Line charts: use thick lines (width=4) and bright colors: line=dict(color='red', width=4)\n"
         "- Uses hover templates for interactivity\n\n"
         
         "EXAMPLE - Check data before filtering:\n"
-        "# Check if 'Steam' cultivar exists\n"
-        "if 'Steam' in df['Cultivar Name'].values:\n"
-        "    filtered_df = df[df['Cultivar Name'] == 'Steam']\n"
+        "# Always check what values actually exist before filtering\n"
+        "print('Available bean types:', df['bean_type'].unique() if 'bean_type' in df.columns else 'No bean_type column')\n"
+        "print('Available cultivars:', df['Cultivar Name'].unique()[:10])  # Show first 10\n"
+        "print('Available years:', sorted(df['Year'].unique()) if 'Year' in df.columns else 'No Year column')\n"
+        "\n"
+        "# For navy beans, use 'White Bean' (the actual value in dataset)\n"
+        "if 'White Bean' in df['bean_type'].values:\n"
+        "    bean_df = df[df['bean_type'] == 'White Bean']\n"
         "else:\n"
-        "    filtered_df = df  # Show all data if specific cultivar not found\n"
+        "    bean_df = df  # Use all data if no bean type filtering possible\n"
+        "\n"
+        "# Check if specific cultivar exists\n"
+        "if 'Steam' in bean_df['Cultivar Name'].values:\n"
+        "    filtered_df = bean_df[bean_df['Cultivar Name'] == 'Steam']\n"
+        "else:\n"
+        "    filtered_df = bean_df  # Show all data if specific cultivar not found\n"
         "fig = go.Figure()\n"
         "fig.add_trace(go.Scatter(x=filtered_df['Year'], y=filtered_df['Yield']))\n"
         "fig.update_layout(title='Chart Title', height=450, width=900)\n\n"
+        
+        "EXAMPLE - Global request with Ontario data:\n"
+        "# User asks for global country comparison but we only have Ontario stations\n"
+        "stations_df = df.groupby('Location')['Yield'].mean().reset_index()\n"
+        "fig = go.Bar(x=stations_df['Location'], y=stations_df['Yield'])\n"
+        "fig = go.Figure(data=fig)\n"
+        "fig.update_layout(title='Ontario Research Stations Yield Comparison (Global Data Not Available)', height=450, width=900)\n\n"
+        
+        "EXAMPLE - Navy bean comparison (use 'White Bean' not 'navy bean'):\n"
+        "# Filter for white beans (which includes navy beans in this dataset)\n"
+        "white_beans = df[df['bean_type'] == 'White Bean'] if 'bean_type' in df.columns else df\n"
+        "# Group by cultivar and calculate mean yield\n"
+        "grouped_df = white_beans.groupby('Cultivar Name')['Yield'].mean().reset_index()\n"
+        "# Highlight specific cultivar\n"
+        "colors = ['red' if x == 'Steam' else 'blue' for x in grouped_df['Cultivar Name']]\n"
+        "fig = go.Figure(data=go.Bar(x=grouped_df['Cultivar Name'], y=grouped_df['Yield'], \n"
+        "                            marker=dict(color=colors, line=dict(color='black', width=1))))\n"
+        "fig.update_layout(title='White Bean Cultivar Yield Comparison (Navy Beans)', height=450, width=900)\n\n"
         
         "OUTPUT ONLY THE PYTHON CODE. NO OTHER TEXT."
     )
@@ -139,15 +175,39 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
         for var_name, var_value in local_ns.items():
             if isinstance(var_value, pd.DataFrame) and var_name.endswith('_df') and var_value.empty:
                 print(f"⚠️ Warning: {var_name} is empty after filtering")
-                # Create an informative error figure
+                
+                # Provide debugging information
+                print("🔍 Available data for debugging:")
+                if 'bean_type' in df.columns:
+                    print(f"  Bean types: {df['bean_type'].unique()}")
+                if 'Cultivar Name' in df.columns:
+                    print(f"  Cultivars: {df['Cultivar Name'].unique()[:10]}...")
+                if 'Year' in df.columns:
+                    print(f"  Years: {sorted(df['Year'].unique())}")
+                
+                # Create an informative error figure with helpful context
+                available_info = []
+                if 'bean_type' in df.columns:
+                    available_info.append(f"Available bean types: {', '.join(df['bean_type'].unique())}")
+                if 'Cultivar Name' in df.columns:
+                    cultivar_count = len(df['Cultivar Name'].unique())
+                    available_info.append(f"Available cultivars: {cultivar_count} varieties")
+                if 'Year' in df.columns:
+                    years = sorted(df['Year'].unique())
+                    available_info.append(f"Available years: {min(years)}-{max(years)}")
+                
                 fig = go.Figure()
+                error_text = "No data found matching the specified criteria.<br><br>"
+                error_text += "<br>".join(available_info)
+                error_text += "<br><br>Tip: Navy beans are stored as 'White Bean' in this dataset."
+                
                 fig.add_annotation(
-                    text="No data found matching the specified criteria.<br>The dataset may not contain the requested conditions.",
+                    text=error_text,
                     xref="paper", yref="paper", x=0.5, y=0.5,
-                    showarrow=False, font=dict(size=16, color="red")
+                    showarrow=False, font=dict(size=14, color="red")
                 )
                 fig.update_layout(
-                    title="No Data Found",
+                    title="No Data Found - Check Filter Criteria",
                     xaxis=dict(visible=False),
                     yaxis=dict(visible=False),
                     height=450, width=900
@@ -167,13 +227,32 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
         if not isinstance(fig, go.Figure):
             raise RuntimeError("No plotly Figure was produced.")
         
-        # Check if the figure has any data traces
-        if not fig.data or all(len(trace.x if hasattr(trace, 'x') and trace.x is not None else []) == 0 for trace in fig.data):
+        # Check if the figure has any data traces (handle both plots and tables)
+        has_data = False
+        if fig.data:
+            for trace in fig.data:
+                # Check for scatter/line plots with x/y data
+                if hasattr(trace, 'x') and trace.x is not None and len(trace.x) > 0:
+                    has_data = True
+                    break
+                # Check for tables with cell data
+                elif hasattr(trace, 'cells') and trace.cells is not None:
+                    if hasattr(trace.cells, 'values') and trace.cells.values is not None:
+                        # Check if table has actual data (not just headers)
+                        if any(len(col) > 0 for col in trace.cells.values if col is not None):
+                            has_data = True
+                            break
+                # Check for other chart types (bar, histogram, etc.)
+                elif hasattr(trace, 'y') and trace.y is not None and len(trace.y) > 0:
+                    has_data = True
+                    break
+        
+        if not has_data:
             print("⚠️ Warning: Generated figure has no data points")
             # Create an informative error figure
             fig = go.Figure()
             fig.add_annotation(
-                text="No data points to display.<br>The filtering criteria may be too restrictive.",
+                text="No data points to display.<br>The filtering criteria may be too restrictive or the requested data may not exist in this dataset.",
                 xref="paper", yref="paper", x=0.5, y=0.5,
                 showarrow=False, font=dict(size=16, color="orange")
             )
@@ -188,7 +267,19 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
 
     except Exception as e:
         traceback.print_exc()
-        raise RuntimeError(f"Generated code failed → {e}") from e
+        
+        # Handle common Plotly property errors with specific guidance
+        if "Invalid property specified for object of type" in str(e):
+            if "Marker: 'size'" in str(e) and "bar" in str(e).lower():
+                error_msg = "Chart generation failed: 'size' property not valid for bar charts. Use color and line properties instead."
+            elif "invalid property" in str(e).lower():
+                error_msg = f"Chart generation failed: Invalid Plotly property used. {str(e)}"
+            else:
+                error_msg = f"Chart generation failed: Plotly configuration error. {str(e)}"
+        else:
+            error_msg = f"Generated code failed → {e}"
+            
+        raise RuntimeError(error_msg) from e
 
 def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, context: str = "") -> Dict:
     """
@@ -227,6 +318,39 @@ def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, contex
             "data": json.loads(fig_json),
             "title": chart_title,
             "generated_code": code
+        }
+        
+    except RuntimeError as e:
+        error_msg = str(e)
+        
+        # Try to auto-fix common issues and retry once
+        if "'size' property not valid for bar charts" in error_msg:
+            print("🔄 Attempting to fix bar chart marker size issue...")
+            try:
+                # Add specific instruction to avoid size property for bar charts
+                fixed_prompt = f"{prompt}\n\nIMPORTANT: For bar charts, DO NOT use 'size' property in marker dict. Use only 'color' and 'line' properties."
+                fixed_code = ask_llm_for_plotly(fixed_prompt, df, api_key)
+                fig = run_generated_code(fixed_code, df)
+                fig_json = fig.to_json()
+                
+                chart_title = "Data Visualization"
+                if fig.layout and fig.layout.title and fig.layout.title.text:
+                    chart_title = fig.layout.title.text
+                
+                return {
+                    "type": "plotly",
+                    "data": json.loads(fig_json),
+                    "title": chart_title,
+                    "generated_code": fixed_code
+                }
+            except Exception as retry_error:
+                error_msg = f"Chart generation failed even after auto-fix attempt: {str(retry_error)}"
+        
+        print(f"Error creating chart: {error_msg}")
+        return {
+            "type": "error",
+            "error": error_msg,
+            "title": "Chart Generation Error"
         }
         
     except Exception as e:

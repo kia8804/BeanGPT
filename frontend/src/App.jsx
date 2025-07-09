@@ -126,6 +126,7 @@ export default function App() {
   // Dynamic loading steps based on query type
   const getLoadingSteps = () => {
     const baseSteps = [
+      { step: "Thinking", detail: "Processing your question...", icon: "💭" },
       { step: "Analyzing query", detail: "Determining optimal search strategy", icon: "🤔" },
       { step: "Processing embeddings", detail: "Converting query to semantic vectors", icon: "🧮" }
     ];
@@ -176,12 +177,8 @@ export default function App() {
       setCurrentStep(0);
       setCompletedSteps([]);
       
-      // Only use minimal timing for the first step, let backend progress drive the rest
-      const timeout = setTimeout(() => {
-        setCompletedSteps(prev => [...prev, 0]);
-        setCurrentStep(1);
-      }, 1000);
-      timeouts.push(timeout);
+      // The thinking step will be triggered immediately by backend
+      // No need for frontend timing since backend sends "thinking" progress immediately
     } else {
       // Reset when loading stops
       setCurrentStep(0);
@@ -221,10 +218,11 @@ export default function App() {
 
     // Start the actual request immediately, let backend progress drive the UI
     try {
-      setIsLoading(false);
+      // Keep loading true until we start receiving content
+      // setIsLoading(false); // Remove this - keep loading until content starts
       
-      // Small delay to show initial analysis step
-      await new Promise(resolve => setTimeout(resolve, 1200));
+      // Small delay to show initial thinking step
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       setIsStreaming(true);
       setStreamingText('');
@@ -279,6 +277,9 @@ export default function App() {
                 const data = JSON.parse(jsonStr);
                 
                 if (data.type === 'content') {
+                  // First content received - immediately stop loading and start streaming display
+                  setIsLoading(false);
+                  
                   fullText += data.data;
                   setStreamingText(fullText);
                   
@@ -297,7 +298,15 @@ export default function App() {
                   // Update loading step based on backend progress
                   const currentSteps = getLoadingSteps();
                   
-                  if (data.data.step === 'dataset') {
+                  if (data.data.step === 'thinking') {
+                    // Initial thinking step - set to first step
+                    setCurrentStep(0);
+                    setCompletedSteps([]);
+                  } else if (data.data.step === 'analysis') {
+                    // Analysis step - move to analysis step and mark thinking as completed
+                    setCurrentStep(1);
+                    setCompletedSteps([0]);
+                  } else if (data.data.step === 'dataset') {
                     // Dataset query started
                     const datasetStepIndex = currentSteps.findIndex(step => step.step.includes('dataset') || step.step.includes('Checking'));
                     if (datasetStepIndex >= 0) setCurrentStep(datasetStepIndex);
@@ -317,7 +326,7 @@ export default function App() {
                     if (searchStepIndex >= 0) setCurrentStep(searchStepIndex);
                   } else if (data.data.step === 'embeddings') {
                     // Processing embeddings
-                    setCurrentStep(1); // Processing embeddings step
+                    setCurrentStep(2); // Processing embeddings step (now index 2)
                   } else if (data.data.step === 'search') {
                     // Searching literature database
                     const searchStepIndex = currentSteps.findIndex(step => step.step.includes('literature') || step.step.includes('Searching'));
@@ -1021,7 +1030,7 @@ export default function App() {
             ))}
 
             {/* Streaming Message */}
-            {isStreaming && (
+            {isStreaming && streamingText && (
               <div className="flex justify-start">
                 <div className="max-w-[85%]">
                   <div className="flex items-center space-x-2 mb-2">
