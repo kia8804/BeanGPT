@@ -643,7 +643,7 @@ export default function App() {
             <div>
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Main Platform</h2>
               <p className="text-gray-600 dark:text-slate-400 text-sm mt-1">
-                Dry Bean Genetics & Breeding Analysis Platform
+                Dry Bean Breeding & Computational Biology
               </p>
             </div>
             <div className="flex items-center space-x-4">

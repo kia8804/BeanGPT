@@ -237,7 +237,6 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
 
     # Build response focused on data analysis
     response = f"## 📊 **Bean Data Analysis Results**\n\n"
-    response += f"**Dataset:** {len(df)} total records available for analysis\n\n"
     
     for cultivar_name in mentioned_cultivars:
         cultivar_data = df[df['Cultivar Name'] == cultivar_name]
@@ -271,11 +270,11 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
             else:
                 sample_df = df[display_cols].head(5)
                 response += sample_df.to_markdown(index=False)
-                response += f"\n\n*Sample of {len(sample_df)} rows from {len(df)} total records*"
+                response += f"\n\n*Sample data from available records*"
         else:
             sample_df = df[display_cols].head(5)
             response += sample_df.to_markdown(index=False)
-            response += f"\n\n*Sample of {len(sample_df)} rows from {len(df)} total records*"
+            response += f"\n\n*Sample data from available records*"
     
     return response, "", chart_data
                         

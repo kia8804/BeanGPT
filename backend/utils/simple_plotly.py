@@ -137,7 +137,7 @@ def ask_llm_for_plotly(prompt: str, df: pd.DataFrame, api_key: str) -> str:
 
     messages = [
         {"role": "system", "content": system_msg},
-        {"role": "user", "content": f"Dataset: {len(df)} rows, columns: {cols}, numeric: {num_cols}"},
+        {"role": "user", "content": f"Available columns: {cols}, numeric columns: {num_cols}"},
         {"role": "user", "content": f"Sample data: {rows[:3]}"},  # Reduce sample size
         {"role": "user", "content": f"Generate Python code for: {prompt}"},
         {"role": "user", "content": "RESPOND WITH ONLY PYTHON CODE - NO EXPLANATORY TEXT"},
