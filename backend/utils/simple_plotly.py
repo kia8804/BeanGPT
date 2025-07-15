@@ -12,7 +12,9 @@ from typing import Dict
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
-from openai import OpenAI
+# Using OpenAI through wrapper to avoid proxy issues
+from exceptions import DataProcessingError
+from utils.openai_client import create_openai_client
 
 def strip_md_fences(code: str) -> str:
     """Remove ``` fences and any explanatory text, extracting only Python code."""
@@ -56,90 +58,262 @@ def numeric_cols(df: pd.DataFrame) -> list:
     """Return numeric column names only (int / float)."""
     return [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
 
-def ask_llm_for_plotly(prompt: str, df: pd.DataFrame, api_key: str) -> str:
-    """Generate Plotly chart code using OpenAI - exactly like your tested version."""
-    client = OpenAI(api_key=api_key)
-    
+def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
+    """Generate Plotly code using GPT-4o with dynamic dataset awareness."""
     cols = list(df.columns)
     num_cols = numeric_cols(df)
     rows = sample_rows(df)
 
+    # Dynamically analyze the dataset
+    categorical_cols = [col for col in cols if col not in num_cols]
+    date_cols = [col for col in cols if df[col].dtype == 'datetime64[ns]' or 'date' in col.lower() or 'year' in col.lower()]
+    
+    # Get unique values for categorical columns (limited to first 10 for brevity)
+    categorical_info = {}
+    for col in categorical_cols[:5]:  # Limit to first 5 categorical columns
+        unique_vals = df[col].unique()
+        if len(unique_vals) <= 20:  # Only show if reasonable number of unique values
+            categorical_info[col] = list(unique_vals)[:10]
+    
     system_msg = (
         "CRITICAL INSTRUCTION: Output ONLY executable Python code. No explanations, no text, no markdown formatting, no comments about what you're doing.\n\n"
         
-        "You are a code generator for a dry bean research platform. Generate ONLY raw Python code that:\n"
+        "You are a dynamic chart generator capable of creating ANY type of visualization. Generate ONLY raw Python code that:\n"
         "- Uses the existing DataFrame `df` (never create sample data or overwrite df)\n"
-        "- DATASET CONTEXT: This is Ontario research station data with locations like WOOD, WINC, STHM, AUBN, etc.\n"
-        "- DO NOT filter for 'Ontario' - ALL data is already from Ontario research stations\n"
-        "- Location column contains research station codes (WOOD, WINC, etc.), not country names\n"
-        "- Bean types in dataset: 'White Bean' (includes navy beans), 'Coloured Bean'\n"
-        "- IMPORTANT: Navy beans = White beans in this dataset. Use 'White Bean' not 'navy bean'\n"
-        "- This is NOT global data - it's all Ontario bean trial data from different research stations\n"
-        "- CRITICAL: If user asks for global/world/country data that doesn't exist, create a chart showing available Ontario station data instead\n"
-        "- When global data is requested but unavailable, create an informative title like 'Ontario Research Station Comparison (Global Data Not Available)'\n"
-        "- IMPORTANT: Before applying complex filters, check if the requested data actually exists in the dataset\n"
-        "- If filtering for specific conditions, first check if those values exist in the relevant columns\n"
-        "- If the requested conditions don't exist, create a simple chart with available data and a descriptive title explaining what's shown\n"
+        "- ALWAYS check if columns exist before using them\n"
+        "- ALWAYS check if values exist in columns before filtering\n"
+        "- If requested data doesn't exist, create a chart with available data and informative title\n"
+        "- When user requests global/world/country data but only local data is available, create a clear table showing the data limitation\n"
         "- Creates exactly ONE Plotly figure assigned to variable `fig`\n" 
         "- Uses plotly.graph_objects as go and plotly.express as px\n"
         "- Never calls fig.show()\n"
         "- Includes professional styling with update_layout()\n"
         "- Sets height=450, width=900 for proper display\n"
-        "- Uses clear axis labels with units (e.g., 'Yield (kg/ha)', 'Maturity (days)')\n"
-        "- Includes descriptive title that reflects what data is actually shown\n"
+        "- Uses clear, descriptive axis labels and titles\n"
+        "- Can create ANY chart type including but not limited to:\n"
+        "  * Basic: bar, line, scatter, pie, histogram, box plots\n"
+        "  * Advanced: heatmaps, treemaps, sunburst, radar charts\n"
+        "  * Statistical: regression lines, correlation matrices, distribution plots\n"
+        "  * 3D: surface plots, 3D scatter plots, mesh plots\n"
+        "  * Tables: formatted data tables with go.Table()\n"
+        "  * Custom: any creative visualization requested by user\n"
+        "- For statistical analysis (regression, correlation, etc.), use pandas and numpy as needed\n"
+        "- IMPORTANT: Use modern pandas syntax - NO .append() method (deprecated), use pd.concat() instead\n"
+        "- CRITICAL: Initialize ALL variables outside if-blocks to avoid NameError/scoping issues\n"
+        "- CRITICAL: Extract cultivar names from user request dynamically, don't hardcode specific cultivars\n"
         "- For highlighting specific items:\n"
         "  * Bar charts: use bright colors (red/orange) and line borders: marker=dict(color='red', line=dict(color='black', width=2))\n"
         "  * Scatter plots: use large markers (size=15-20) and bright colors: marker=dict(size=15, color='red', line=dict(color='black', width=2))\n"
         "  * Line charts: use thick lines (width=4) and bright colors: line=dict(color='red', width=4)\n"
-        "- Uses hover templates for interactivity\n\n"
+        "- Uses hover templates for interactivity\n"
+        "- Before filtering, always print available values to help user understand the data\n"
+        "- CRITICAL: When user mentions cultivar names, extract them dynamically from the request\n"
+        "- EXAMPLE: 'OAC Steam' → search for 'OAC Steam', 'Steam' → search for 'Steam'\n"
+        "- DO NOT assume or hardcode cultivar names like 'OAC Seal'\n\n"
         
-        "EXAMPLE - Check data before filtering:\n"
-        "# Always check what values actually exist before filtering\n"
-        "print('Available bean types:', df['bean_type'].unique() if 'bean_type' in df.columns else 'No bean_type column')\n"
-        "print('Available cultivars:', df['Cultivar Name'].unique()[:10])  # Show first 10\n"
-        "print('Available years:', sorted(df['Year'].unique()) if 'Year' in df.columns else 'No Year column')\n"
+        "EXAMPLE - Dynamic data checking:\n"
+        "# Always check what columns and values exist before filtering\n"
+        "print('Available columns:', df.columns.tolist())\n"
+        "print('Data shape:', df.shape)\n"
         "\n"
-        "# For navy beans, use 'White Bean' (the actual value in dataset)\n"
-        "if 'White Bean' in df['bean_type'].values:\n"
-        "    bean_df = df[df['bean_type'] == 'White Bean']\n"
+        "# Check if specific columns exist before using them\n"
+        "if 'category_col' in df.columns:\n"
+        "    print('Available categories:', df['category_col'].unique()[:10])\n"
+        "    filtered_df = df[df['category_col'] == 'specific_value'] if 'specific_value' in df['category_col'].values else df\n"
         "else:\n"
-        "    bean_df = df  # Use all data if no bean type filtering possible\n"
+        "    filtered_df = df\n"
         "\n"
-        "# Check if specific cultivar exists\n"
-        "if 'Steam' in bean_df['Cultivar Name'].values:\n"
-        "    filtered_df = bean_df[bean_df['Cultivar Name'] == 'Steam']\n"
-        "else:\n"
-        "    filtered_df = bean_df  # Show all data if specific cultivar not found\n"
+        "# Use the first available numeric column for y-axis if specific column not found\n"
+        "numeric_cols = df.select_dtypes(include=['number']).columns.tolist()\n"
+        "y_col = numeric_cols[0] if numeric_cols else df.columns[0]\n"
+        "\n"
         "fig = go.Figure()\n"
-        "fig.add_trace(go.Scatter(x=filtered_df['Year'], y=filtered_df['Yield']))\n"
-        "fig.update_layout(title='Chart Title', height=450, width=900)\n\n"
+        "fig.add_trace(go.Scatter(x=filtered_df.index, y=filtered_df[y_col]))\n"
+        "fig.update_layout(title='Dynamic Chart Title', height=450, width=900)\n\n"
         
-        "EXAMPLE - Global request with Ontario data:\n"
-        "# User asks for global country comparison but we only have Ontario stations\n"
-        "stations_df = df.groupby('Location')['Yield'].mean().reset_index()\n"
-        "fig = go.Bar(x=stations_df['Location'], y=stations_df['Yield'])\n"
-        "fig = go.Figure(data=fig)\n"
-        "fig.update_layout(title='Ontario Research Stations Yield Comparison (Global Data Not Available)', height=450, width=900)\n\n"
+        "EXAMPLE - Dynamic table generation with dark mode support:\n"
+        "# Create a summary table with available data\n"
+        "if len(df.columns) >= 2:\n"
+        "    group_col = df.columns[0]  # Use first column for grouping\n"
+        "    value_col = df.select_dtypes(include=['number']).columns[0] if df.select_dtypes(include=['number']).columns.any() else df.columns[1]\n"
+        "    \n"
+        "    table_data = df.groupby(group_col)[value_col].mean().reset_index() if df[group_col].nunique() < 50 else df.head(20)\n"
+        "    \n"
+        "    fig = go.Figure(data=[go.Table(\n"
+        "        header=dict(values=list(table_data.columns), \n"
+        "                   fill_color='#4A90E2', \n"
+        "                   font=dict(color='white', size=12),\n"
+        "                   align='left'),\n"
+        "        cells=dict(values=[table_data[col] for col in table_data.columns], \n"
+        "                   fill_color='#F8F9FA', \n"
+        "                   font=dict(color='black', size=11),\n"
+        "                   align='left')\n"
+        "    )])\n"
+        "    fig.update_layout(title='Data Summary Table', height=450, width=900, \n"
+        "                      paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')\n"
+        "else:\n"
+        "    fig = go.Figure()\n"
+        "    fig.add_annotation(text='Insufficient data for table generation', x=0.5, y=0.5)\n"
+        "    fig.update_layout(title='No Data Available', height=450, width=900)\n\n"
         
-        "EXAMPLE - Navy bean comparison (use 'White Bean' not 'navy bean'):\n"
-        "# Filter for white beans (which includes navy beans in this dataset)\n"
-        "white_beans = df[df['bean_type'] == 'White Bean'] if 'bean_type' in df.columns else df\n"
-        "# Group by cultivar and calculate mean yield\n"
-        "grouped_df = white_beans.groupby('Cultivar Name')['Yield'].mean().reset_index()\n"
-        "# Highlight specific cultivar\n"
-        "colors = ['red' if x == 'Steam' else 'blue' for x in grouped_df['Cultivar Name']]\n"
-        "fig = go.Figure(data=go.Bar(x=grouped_df['Cultivar Name'], y=grouped_df['Yield'], \n"
-        "                            marker=dict(color=colors, line=dict(color='black', width=1))))\n"
-        "fig.update_layout(title='White Bean Cultivar Yield Comparison (Navy Beans)', height=450, width=900)\n\n"
+        "EXAMPLE - Adding rows to DataFrame (MODERN PANDAS):\n"
+        "# DO NOT use .append() - it's deprecated! Use pd.concat() instead\n"
+        "base_data = df.groupby('category')['value'].mean().reset_index()\n"
+        "# To add a new row, create a new DataFrame and concatenate\n"
+        "new_row = pd.DataFrame({'category': ['New Category'], 'value': [123.45]})\n"
+        "combined_data = pd.concat([base_data, new_row], ignore_index=True)\n"
+        "# Or add multiple rows at once\n"
+        "additional_rows = pd.DataFrame({\n"
+        "    'category': ['Cat1', 'Cat2'], \n"
+        "    'value': [100, 200]\n"
+        "})\n"
+        "final_data = pd.concat([base_data, additional_rows], ignore_index=True)\n"
+        "# For tables, use dark mode friendly colors:\n"
+        "fig = go.Figure(data=[go.Table(\n"
+        "    header=dict(values=['Category', 'Value'], fill_color='#4A90E2', font=dict(color='white', size=12)),\n"
+        "    cells=dict(values=[final_data['category'], final_data['value']], fill_color='#F8F9FA', font=dict(color='black', size=11))\n"
+        ")])\n"
+        "fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')\n\n"
+        
+        "EXAMPLE - Dynamic scatter plot:\n"
+        "# Create scatter plot with available numeric columns\n"
+        "numeric_cols = df.select_dtypes(include=['number']).columns.tolist()\n"
+        "if len(numeric_cols) >= 2:\n"
+        "    x_col, y_col = numeric_cols[0], numeric_cols[1]\n"
+        "    fig = go.Figure()\n"
+        "    fig.add_trace(go.Scatter(x=df[x_col], y=df[y_col], mode='markers'))\n"
+        "    fig.update_layout(title=f'{y_col} vs {x_col}', xaxis_title=x_col, yaxis_title=y_col, height=450, width=900)\n"
+        "else:\n"
+        "    fig = go.Figure()\n"
+        "    fig.add_annotation(text='Need at least 2 numeric columns for scatter plot', x=0.5, y=0.5)\n"
+        "    fig.update_layout(title='Insufficient Numeric Data', height=450, width=900)\n\n"
+        
+        "EXAMPLE - Linear regression:\n"
+        "# Create scatter plot with regression line\n"
+        "import numpy as np\n"
+        "numeric_cols = df.select_dtypes(include=['number']).columns.tolist()\n"
+        "if len(numeric_cols) >= 2:\n"
+        "    x_col, y_col = numeric_cols[0], numeric_cols[1]\n"
+        "    # Remove NaN values\n"
+        "    clean_df = df[[x_col, y_col]].dropna()\n"
+        "    x_vals, y_vals = clean_df[x_col], clean_df[y_col]\n"
+        "    \n"
+        "    # Calculate regression line\n"
+        "    z = np.polyfit(x_vals, y_vals, 1)\n"
+        "    p = np.poly1d(z)\n"
+        "    \n"
+        "    fig = go.Figure()\n"
+        "    fig.add_trace(go.Scatter(x=x_vals, y=y_vals, mode='markers', name='Data'))\n"
+        "    fig.add_trace(go.Scatter(x=x_vals, y=p(x_vals), mode='lines', name='Regression Line'))\n"
+        "    fig.update_layout(title=f'Linear Regression: {y_col} vs {x_col}', height=450, width=900)\n\n"
+        
+        "EXAMPLE - Heatmap/Correlation matrix:\n"
+        "# Create correlation heatmap\n"
+        "numeric_cols = df.select_dtypes(include=['number']).columns.tolist()\n"
+        "if len(numeric_cols) >= 2:\n"
+        "    corr_matrix = df[numeric_cols].corr()\n"
+        "    fig = go.Figure(data=go.Heatmap(z=corr_matrix.values, \n"
+        "                                    x=corr_matrix.columns, \n"
+        "                                    y=corr_matrix.columns,\n"
+        "                                    colorscale='RdBu'))\n"
+        "    fig.update_layout(title='Correlation Matrix', height=450, width=900)\n\n"
+        
+        "EXAMPLE - Handling global data request with local data and specific cultivar:\n"
+        "# When user asks for global/world/country comparison but only local data is available\n"
+        "# IMPORTANT: Initialize variables outside if-blocks to avoid scoping issues\n"
+        "if 'Location' in df.columns and 'Yield' in df.columns:\n"
+        "    location_data = df.groupby('Location').agg({'Yield': 'mean', 'Year': 'nunique'}).reset_index()\n"
+        "    location_data = location_data.sort_values('Yield', ascending=False)\n"
+        "    \n"
+        "    # Initialize cultivar data - MUST be outside any if-blocks\n"
+        "    cultivar_avg_yield = None\n"
+        "    cultivar_name = None\n"
+        "    \n"
+        "    # CRITICAL: Extract cultivar names dynamically from user request\n"
+        "    # DO NOT hardcode specific cultivars like 'OAC Seal'\n"
+        "    if 'Cultivar Name' in df.columns:\n"
+        "        available_cultivars = df['Cultivar Name'].unique()\n"
+        "        request_words = str(prompt).lower().split()\n"
+        "        \n"
+        "        # Look for cultivar names mentioned in user request\n"
+        "        user_request_lower = str(prompt).lower()  # prompt contains the user request\n"
+        "        for cultivar in available_cultivars:\n"
+        "            cultivar_str = str(cultivar).lower()\n"
+        "            # Check if cultivar name appears in request\n"
+        "            if cultivar_str in user_request_lower:\n"
+        "                cultivar_name = cultivar\n"
+        "                print(f'Found cultivar in request: {cultivar_name}')\n"
+        "                break\n"
+        "            # Also check for partial matches (e.g., 'Steam' matches 'Steam')\n"
+        "            elif any(word in cultivar_str for word in request_words if len(word) > 3):\n"
+        "                cultivar_name = cultivar\n"
+        "                print(f'Found cultivar by partial match: {cultivar_name}')\n"
+        "                break\n"
+        "    \n"
+        "    # Check for specific cultivar data - only if cultivar was found\n"
+        "    if cultivar_name and 'Cultivar Name' in df.columns:\n"
+        "        # Try exact match first\n"
+        "        cultivar_data = df[df['Cultivar Name'] == cultivar_name]\n"
+        "        if cultivar_data.empty and cultivar_name:\n"
+        "            # Try case-insensitive match\n"
+        "            cultivar_data = df[df['Cultivar Name'].str.contains(cultivar_name, case=False, na=False)]\n"
+        "        \n"
+        "        if not cultivar_data.empty:\n"
+        "            cultivar_avg_yield = cultivar_data['Yield'].mean()\n"
+        "            print(f'Found {len(cultivar_data)} records for {cultivar_name}, avg yield: {cultivar_avg_yield:.1f}')\n"
+        "        else:\n"
+        "            print(f'No data found for cultivar: {cultivar_name}')\n"
+        "    elif not cultivar_name:\n"
+        "        print('No specific cultivar mentioned in request')\n"
+        "    \n"
+        "    # Create comparison column - now cultivar_avg_yield is always defined\n"
+        "    comparison_vals = []\n"
+        "    for yield_val in location_data['Yield']:\n"
+        "        if cultivar_avg_yield is not None:\n"
+        "            if yield_val > cultivar_avg_yield:\n"
+        "                comparison_vals.append(f'Higher than {cultivar_name}')\n"
+        "            elif yield_val < cultivar_avg_yield:\n"
+        "                comparison_vals.append(f'Lower than {cultivar_name}')\n"
+        "            else:\n"
+        "                comparison_vals.append(f'Equal to {cultivar_name}')\n"
+        "        else:\n"
+        "            comparison_vals.append('No cultivar data')\n"
+        "    \n"
+        "    # Add summary rows\n"
+        "    locations = [f'Ontario Station: {loc}' for loc in location_data['Location']] + ['NOTE: Global data not available']\n"
+        "    yields = list(location_data['Yield'].round(1)) + ['Only Ontario research station data']\n"
+        "    comparisons = comparison_vals + ['No international comparison possible']\n"
+        "    \n"
+        "    # Add cultivar row if data exists\n"
+        "    if cultivar_avg_yield is not None:\n"
+        "        locations.append(f'{cultivar_name} (Ontario avg)')\n"
+        "        yields.append(round(cultivar_avg_yield, 1))\n"
+        "        comparisons.append('Reference cultivar')\n"
+        "    \n"
+        "    # Create informative table\n"
+        "    fig = go.Figure(data=[go.Table(\n"
+        "        header=dict(values=['Data Available', 'Average Yield (kg/ha)', 'Comparison'], \n"
+        "                   fill_color='#4A90E2', \n"
+        "                   font=dict(color='white', size=12),\n"
+        "                   align='left'),\n"
+        "        cells=dict(values=[locations, yields, comparisons], \n"
+        "                   fill_color='#F8F9FA', \n"
+        "                   font=dict(color='black', size=11),\n"
+        "                   align='left')\n"
+        "    )])\n"
+        "    fig.update_layout(title='Ontario Research Station Data (Global Data Not Available)', \n"
+        "                      height=450, width=900, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')\n\n"
         
         "OUTPUT ONLY THE PYTHON CODE. NO OTHER TEXT."
     )
 
     messages = [
         {"role": "system", "content": system_msg},
-        {"role": "user", "content": f"Available columns: {cols}, numeric columns: {num_cols}"},
-        {"role": "user", "content": f"Sample data: {rows[:3]}"},  # Reduce sample size
-        {"role": "user", "content": f"Generate Python code for: {prompt}"},
+        {"role": "user", "content": f"Dataset info:\n- Columns: {cols}\n- Numeric columns: {num_cols}\n- Categorical columns: {categorical_cols}\n- Date columns: {date_cols}"},
+        {"role": "user", "content": f"Sample categorical values: {categorical_info}"},
+        {"role": "user", "content": f"Sample data (first 3 rows): {rows[:3]}"},
+        {"role": "user", "content": f"User request: {prompt}"},
+        {"role": "user", "content": "CRITICAL: Extract any cultivar names mentioned in the user request and use them in your analysis"},
         {"role": "user", "content": "RESPOND WITH ONLY PYTHON CODE - NO EXPLANATORY TEXT"},
     ]
 
@@ -152,13 +326,28 @@ def ask_llm_for_plotly(prompt: str, df: pd.DataFrame, api_key: str) -> str:
 
 def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
     """Execute the LLM-generated code and return the Plotly Figure."""
+    # Create safe execution environment for research use
     safe_globals = {
         "df": df, 
         "go": go, 
         "px": px,
         "pd": pd,
         "np": __import__("numpy"),
-        "plotly": __import__("plotly")
+        "plotly": __import__("plotly"),
+        "print": print,
+        "len": len,
+        "range": range,
+        "sorted": sorted,
+        "min": min,
+        "max": max,
+        "sum": sum,
+        "str": str,
+        "int": int,
+        "float": float,
+        "list": list,
+        "dict": dict,
+        "enumerate": enumerate,
+        "zip": zip,
     }
     local_ns: Dict = {}
 
@@ -168,8 +357,8 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
     print("─" * 60, "\nLLM-generated Plotly code:\n", code, "\n", "─" * 60)
 
     try:
-        ast.parse(code, mode="exec")  # syntax check
-        exec(code, safe_globals, local_ns)  # run
+        # Simple execution for research use
+        exec(code, safe_globals, local_ns)
         
         # Check if any filtered dataframes in the code resulted in empty data
         for var_name, var_value in local_ns.items():
@@ -225,7 +414,7 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
                     break
 
         if not isinstance(fig, go.Figure):
-            raise RuntimeError("No plotly Figure was produced.")
+            raise DataProcessingError("No plotly Figure was produced.")
         
         # Check if the figure has any data traces (handle both plots and tables)
         has_data = False
@@ -279,7 +468,7 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
         else:
             error_msg = f"Generated code failed → {e}"
             
-        raise RuntimeError(error_msg) from e
+        raise DataProcessingError(error_msg) from e
 
 def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, context: str = "") -> Dict:
     """
@@ -294,13 +483,16 @@ def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, contex
                 "title": "Chart Generation Error"
             }
         
+        # Create OpenAI client
+        client = create_openai_client(api_key)
+        
         # Build comprehensive prompt for GPT-4o
         prompt = f"{user_request}"
         if context:
             prompt += f" Context: {context}"
         
         # Let GPT-4o analyze the data and create the perfect chart
-        code = ask_llm_for_plotly(prompt, df, api_key)
+        code = generate_plotly_code(client, prompt, df)
         
         # Execute the code to create the figure
         fig = run_generated_code(code, df)
@@ -329,7 +521,7 @@ def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, contex
             try:
                 # Add specific instruction to avoid size property for bar charts
                 fixed_prompt = f"{prompt}\n\nIMPORTANT: For bar charts, DO NOT use 'size' property in marker dict. Use only 'color' and 'line' properties."
-                fixed_code = ask_llm_for_plotly(fixed_prompt, df, api_key)
+                fixed_code = generate_plotly_code(client, fixed_prompt, df)
                 fig = run_generated_code(fixed_code, df)
                 fig_json = fig.to_json()
                 
@@ -354,9 +546,57 @@ def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, contex
         }
         
     except Exception as e:
-        print(f"Error creating chart: {e}")
+        error_msg = str(e)
+        
+        # Check for deprecated pandas methods and attempt auto-fix
+        if "has no attribute 'append'" in error_msg or "append" in error_msg:
+            print("🔄 Attempting to fix deprecated pandas .append() method...")
+            try:
+                # Add specific instruction to use pd.concat() instead of .append()
+                fixed_prompt = f"{prompt}\n\nCRITICAL: DO NOT use DataFrame.append() method (deprecated). Use pd.concat() instead. Example: pd.concat([df1, df2], ignore_index=True)"
+                fixed_code = generate_plotly_code(client, fixed_prompt, df)
+                fig = run_generated_code(fixed_code, df)
+                fig_json = fig.to_json()
+                
+                chart_title = "Data Visualization"
+                if fig.layout and fig.layout.title and fig.layout.title.text:
+                    chart_title = fig.layout.title.text
+                
+                return {
+                    "type": "plotly",
+                    "data": json.loads(fig_json),
+                    "title": chart_title,
+                    "generated_code": fixed_code
+                }
+            except Exception as retry_error:
+                error_msg = f"Chart generation failed even after pandas syntax fix attempt: {str(retry_error)}"
+        
+        # Check for variable scoping issues and attempt auto-fix
+        elif "is not defined" in error_msg or "NameError" in error_msg:
+            print("🔄 Attempting to fix variable scoping/NameError issue...")
+            try:
+                # Add specific instruction about variable initialization
+                fixed_prompt = f"{prompt}\n\nCRITICAL: Initialize ALL variables outside if-blocks to avoid NameError. Example: var = None (before if-block), then set var = value (inside if-block)."
+                fixed_code = generate_plotly_code(client, fixed_prompt, df)
+                fig = run_generated_code(fixed_code, df)
+                fig_json = fig.to_json()
+                
+                chart_title = "Data Visualization"
+                if fig.layout and fig.layout.title and fig.layout.title.text:
+                    chart_title = fig.layout.title.text
+                
+                return {
+                    "type": "plotly",
+                    "data": json.loads(fig_json),
+                    "title": chart_title,
+                    "generated_code": fixed_code
+                }
+            except Exception as retry_error:
+                error_msg = f"Chart generation failed even after scoping fix attempt: {str(retry_error)}"
+        
+        print(f"Error creating chart: {error_msg}")
         return {
             "type": "error",
-            "error": f"Failed to generate chart: {str(e)}",
+            "error": f"Failed to generate chart: {error_msg}",
             "title": "Chart Generation Error"
         } 

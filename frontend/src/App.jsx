@@ -383,10 +383,10 @@ export default function App() {
 
                     // Don't append sources to markdown - we'll render them separately
 
-                    // Append Full Markdown Table
-                    if (data.data.full_markdown_table) {
-                      assistantMarkdown += '\n\n---\n## 📊 **Complete Dataset**\n' + data.data.full_markdown_table;
-                    }
+                    // Complete Dataset section removed per user request
+                    // if (data.data.full_markdown_table) {
+                    //   assistantMarkdown += '\n\n---\n## 📊 **Complete Dataset**\n' + data.data.full_markdown_table;
+                    // }
 
                     setMessages(prev => [...prev, {
                       sender: 'assistant',

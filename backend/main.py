@@ -1,12 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-import os
-
-# Load environment variables from .env file
-load_dotenv()
-
-from routes import chat, upload, ping
+from config import settings
+from routes import chat, ping
 
 app = FastAPI(
     title="BeanGPT Main Platform API",
@@ -17,16 +12,15 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # React dev server
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Include routers
-app.include_router(chat.router, prefix="/api", tags=["chat"])
-app.include_router(upload.router, prefix="/api", tags=["upload"])
-app.include_router(ping.router, prefix="/api", tags=["health"])
+app.include_router(chat.router, prefix=settings.api_prefix, tags=["chat"])
+app.include_router(ping.router, prefix=settings.api_prefix, tags=["health"])
 
 if __name__ == "__main__":
     import uvicorn

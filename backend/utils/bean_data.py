@@ -10,50 +10,17 @@ from typing import Dict, List, Tuple, Optional
 import json
 import numpy as np
 from .simple_plotly import create_smart_chart
-
-# Path to the merged bean dataset file
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
-MERGED_DATA_PATH = os.getenv("MERGED_DATA_PATH", os.path.join(PROJECT_ROOT, "data", "Merged_Bean_Dataset.xlsx"))
-
-# ---- Load merged dataset ----
-def load_all_trials() -> pd.DataFrame:
-    """Load the bean trial data from Excel."""
-    try:
-        df = pd.read_excel(MERGED_DATA_PATH)
-        # Ensure consistency and correct data types
-        df = df[
-            ~df["Cultivar Name"].astype(str).str.lower().isin(["mean", "cv", "lsd(0.05)"])
-        ]
-        # Convert relevant columns to numeric, coercing errors to NaN
-        df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
-        df["Yield"] = pd.to_numeric(df["Yield"], errors="coerce")
-        df["Maturity"] = pd.to_numeric(df["Maturity"], errors="coerce")
-        
-        # Optional: Add lowercase bean_type and trial_group for easier filtering if they exist
-        if 'bean_type' in df.columns:
-            df['bean_type'] = df['bean_type'].astype(str).str.lower()
-        if 'trial_group' in df.columns:
-            df['trial_group'] = df['trial_group'].astype(str).str.lower()
-
-        print(f"Loaded {len(df)} rows from {MERGED_DATA_PATH}")
-        return df
-    except FileNotFoundError:
-        print(f"Error: Merged bean dataset not found at {MERGED_DATA_PATH}")
-        return pd.DataFrame()
-    except Exception as e:
-        print(f"Error loading bean data from {MERGED_DATA_PATH}: {e}")
-        return pd.DataFrame()
-
-# Load the full dataset once when the module is imported
-df_trials = load_all_trials()
+from database.manager import db_manager
 
 def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     """
     SIMPLIFIED VERSION: Analyze bean data with optional chart generation.
     Only creates charts when explicitly requested.
     """
-
+    
+    # Use database manager to get bean data
+    df_trials = db_manager.bean_data
+    
     # Check if data was loaded successfully
     if df_trials.empty:
         return "Bean trial data could not be loaded.", "", {}
@@ -96,6 +63,12 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         return mentioned_cultivars
     
     mentioned_cultivars = find_mentioned_cultivars(original_question, df)
+    
+    # CRITICAL FIX: Override function call parameters with correctly detected cultivars
+    if mentioned_cultivars:
+        # Update the cultivar parameter with the first detected cultivar
+        args['cultivar'] = str(mentioned_cultivars[0])
+        print(f"🔧 Fixed cultivar parameter: '{args.get('cultivar', 'None')}' -> '{mentioned_cultivars[0]}'")
     
     # General dynamic disambiguation system
     def detect_and_resolve_ambiguity(question, args, df):
@@ -163,146 +136,131 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         
         # Provide context-aware suggestions based on available data
         clarification += "**Available options:**\n"
-        if 'Cultivar Name' in df.columns:
-            cultivars = df['Cultivar Name'].dropna().unique()
-            clarification += f"• **Cultivars:** {', '.join([str(c) for c in cultivars[:10]])}\n"
-        if 'Location' in df.columns:
-            locations = df['Location'].dropna().unique()
-            clarification += f"• **Locations:** {', '.join(locations)}\n"
-        if 'Year' in df.columns:
-            years = sorted(df['Year'].dropna().unique())
-            clarification += f"• **Years:** {min(years)}-{max(years)}\n"
-        
-        clarification += "\n**Example:** Instead of 'plot this cultivar', try 'plot Dynasty yield over time'\n\n"
+        clarification += f"- **Cultivars:** {', '.join([str(c) for c in df['Cultivar Name'].dropna().unique()[:8]])}...\n"
+        clarification += f"- **Locations:** {', '.join(df['Location'].dropna().unique()[:5])}\n"
+        clarification += f"- **Years:** {min(df['Year'].dropna())}-{max(df['Year'].dropna())}\n"
         
         return {}, True, clarification
     
-    # Apply general disambiguation BEFORE chart generation
-    resolved_entities, needs_clarification, clarification_msg = detect_and_resolve_ambiguity(original_question, args, df)
+    # Apply ambiguity detection
+    resolved_entities, needs_clarification, clarification_message = detect_and_resolve_ambiguity(original_question, args, df)
     
     if needs_clarification:
-        response = f"## 📊 **Bean Data Analysis Results**\n\n"
-        response += clarification_msg
-        return response, "", {}
-                
-    # Update mentioned_cultivars based on resolved entities
-    if 'cultivar' in resolved_entities and not mentioned_cultivars:
-        cultivar_matches = df[df['Cultivar Name'].str.contains(resolved_entities['cultivar'], case=False, na=False)]['Cultivar Name'].unique()
-        if len(cultivar_matches) > 0:
-            mentioned_cultivars = [cultivar_matches[0]]
+        # Return the clarification message without chart
+        return clarification_message, clarification_message, {}
     
-    # Check if user explicitly wants a chart/visualization
-    chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate"]
-    wants_chart = any(keyword in original_question.lower() for keyword in chart_keywords)
+    # Check if charts are requested
+    chart_keywords = ['chart', 'graph', 'plot', 'visualize', 'visualization', 'show me', 'display', 'table', 'create']
+    chart_requested = any(keyword in original_question.lower() for keyword in chart_keywords)
     
-    # Extract basic analysis parameters
-    analysis_type = args.get("analysis_type", "analysis")
-    analysis_column = args.get("analysis_column", "Yield")
-    chart_type = args.get("chart_type", None)
-
-    # CONDITIONAL CHART GENERATION - Only if explicitly requested
-    chart_data = {}
-    
-    if wants_chart and api_key and len(df) > 0:
-        print("🎯 Chart explicitly requested - generating visualization")
+    if chart_requested and api_key:
+        # Generate chart and description - pass cultivar context
+        cultivar_context = f"Focus on these cultivars: {', '.join([str(c) for c in mentioned_cultivars])}" if mentioned_cultivars else ""
+        chart_data = create_smart_chart(df, original_question, api_key, cultivar_context)
         
-        # Build enhanced prompt with resolved context
-        context_additions = []
+        # Create a data-rich response with actual insights
+        response = f"## 📊 **Bean Data Analysis**\n\n"
+        
+        # Add cultivar context if any were mentioned
         if mentioned_cultivars:
-            context_additions.append(f"Focus on cultivar: {mentioned_cultivars[0]}")
-        if resolved_entities:
-            for param, value in resolved_entities.items():
-                if param == 'cultivar':
-                    context_additions.append(f"Specific cultivar: {value}")
-                elif param == 'location':
-                    context_additions.append(f"Specific location: {value}")
-                elif param == 'year':
-                    context_additions.append(f"Specific year: {value}")
+            response += f"**🌱 Cultivars analyzed:** {', '.join([str(c) for c in mentioned_cultivars])}\n\n"
+            
+            # Add specific data insights for mentioned cultivars
+            for cultivar in mentioned_cultivars:
+                cultivar_data = df[df['Cultivar Name'] == cultivar]
+                if not cultivar_data.empty:
+                    response += f"**{cultivar} Performance:**\n"
+                    response += f"- **Records:** {len(cultivar_data)} trials\n"
+                    if 'Yield' in cultivar_data.columns:
+                        avg_yield = cultivar_data['Yield'].mean()
+                        response += f"- **Average yield:** {avg_yield:.2f} kg/ha\n"
+                    if 'Maturity' in cultivar_data.columns:
+                        avg_maturity = cultivar_data['Maturity'].mean()
+                        response += f"- **Average maturity:** {avg_maturity:.1f} days\n"
+                    if 'Year' in cultivar_data.columns:
+                        years = f"{cultivar_data['Year'].min()}-{cultivar_data['Year'].max()}"
+                        response += f"- **Years tested:** {years}\n"
+                    response += f"- **Locations:** {', '.join(cultivar_data['Location'].unique())}\n\n"
         
-        context_str = ". ".join(context_additions) if context_additions else ""
+        # Add overall dataset context
+        response += f"**📊 Dataset context:** {len(df)} total records, {df['Year'].min()}-{df['Year'].max()}\n"
         
-        # Build a comprehensive prompt for GPT-4o with resolved context
-        if chart_type:
-            chart_prompt = f"User request: {original_question}. {context_str}. Create a {chart_type} chart based on this request. Handle all filtering, grouping, and styling as needed."
-        elif analysis_type == "scatter":
-            chart_prompt = f"User request: {original_question}. {context_str}. Create a scatter plot based on this request. Handle all filtering, grouping, and styling as needed."
-        else:
-            chart_prompt = f"User request: {original_question}. {context_str}. Create the most appropriate visualization based on this request. Handle all filtering, grouping, and styling as needed."
+        # Add comparison insights if multiple cultivars or filtering
+        if len(mentioned_cultivars) > 1:
+            response += f"**🔍 Comparison available** between {len(mentioned_cultivars)} cultivars\n"
+        elif 'white bean' in original_question.lower() or 'coloured bean' in original_question.lower():
+            bean_type = 'white bean' if 'white bean' in original_question.lower() else 'coloured bean'
+            bean_data = df[df['bean_type'] == bean_type] if 'bean_type' in df.columns else df
+            if not bean_data.empty:
+                response += f"**🫘 {bean_type.title()} analysis:** {len(bean_data)} records, avg yield {bean_data['Yield'].mean():.2f} kg/ha\n"
         
-        chart_data = create_smart_chart(df, chart_prompt, api_key, context_str)
-    elif wants_chart:
-        print("🎯 Chart requested but no API key available")
-    else:
-        print("📝 No chart requested - providing data analysis only")
-
-    # Build response focused on data analysis
-    response = f"## 📊 **Bean Data Analysis Results**\n\n"
+        return response, response, chart_data
     
-    for cultivar_name in mentioned_cultivars:
-        cultivar_data = df[df['Cultivar Name'] == cultivar_name]
-        if not cultivar_data.empty:
-            response += f"**{cultivar_name} Variety Analysis:**\n"
-            response += f"- Found {len(cultivar_data)} records for {cultivar_name} variety\n"
-            response += f"- Average yield: {cultivar_data['Yield'].mean():.1f} kg/ha\n"
-            response += f"- Yield range: {cultivar_data['Yield'].min():.1f} - {cultivar_data['Yield'].max():.1f} kg/ha\n"
-            response += f"- Average maturity: {cultivar_data['Maturity'].mean():.1f} days\n"
-            response += f"- Years tested: {', '.join(map(str, sorted(cultivar_data['Year'].unique())))}\n"
-            response += f"- Locations tested: {', '.join(cultivar_data['Location'].unique())}\n\n"
-    
-    if wants_chart:
-        response += f"**Visualization:** {'Chart generated based on your request' if chart_data else 'Chart generation requested but unavailable'}\n\n"
     else:
-        response += f"**Analysis Type:** Data analysis (no visualization requested)\n\n"
-
-    # Show a small sample of relevant data
-    response += "### 📋 **Sample Data:**\n\n"
-    display_cols = [c for c in ["Year", "Location", "Cultivar Name", "Yield", "Maturity", "bean_type"] if c in df.columns]
-    if display_cols:
-        # Show relevant data if specific cultivar mentioned, otherwise general sample
+        # No chart requested, provide text-based analysis
+        response = f"## 📊 **Bean Data Overview**\n\n"
+        
+        # Add cultivar context if any were mentioned
         if mentioned_cultivars:
-            # Use the first mentioned cultivar for sample data
-            cultivar_name = mentioned_cultivars[0]
-            cultivar_data = df[df['Cultivar Name'] == cultivar_name]
-            if not cultivar_data.empty:
-                sample_df = cultivar_data[display_cols].head(5)
-                response += sample_df.to_markdown(index=False)
-                response += f"\n\n*Showing {cultivar_name} variety data ({len(sample_df)} of {len(cultivar_data)} {cultivar_name} records)*"
-            else:
-                sample_df = df[display_cols].head(5)
-                response += sample_df.to_markdown(index=False)
-                response += f"\n\n*Sample data from available records*"
-        else:
-            sample_df = df[display_cols].head(5)
-            response += sample_df.to_markdown(index=False)
-            response += f"\n\n*Sample data from available records*"
-    
-    return response, "", chart_data
-                        
-# ---- GPT-compatible JSON Schema (unchanged) ----
+            response += f"**🌱 Cultivars mentioned:** {', '.join([str(c) for c in mentioned_cultivars])}\n\n"
+        
+        response += f"**📊 Dataset:** {len(df)} records from Ontario bean trials\n"
+        response += f"**📅 Years:** {df['Year'].min()}-{df['Year'].max()}\n"
+        response += f"**📍 Locations:** {', '.join(df['Location'].dropna().unique())}\n\n"
+        
+        # Add summary statistics
+        if 'Cultivar Name' in df.columns:
+            unique_cultivars = df['Cultivar Name'].dropna().nunique()
+            response += f"**🌱 Unique cultivars:** {unique_cultivars}\n"
+        
+        if 'Yield' in df.columns and not df['Yield'].isna().all():
+            avg_yield = df['Yield'].mean()
+            min_yield = df['Yield'].min()
+            max_yield = df['Yield'].max()
+            response += f"**🌾 Yield range:** {min_yield:.1f} - {max_yield:.1f} kg/ha (avg: {avg_yield:.1f})\n"
+        
+        if 'Maturity' in df.columns and not df['Maturity'].isna().all():
+            avg_maturity = df['Maturity'].mean()
+            min_maturity = df['Maturity'].min()
+            max_maturity = df['Maturity'].max()
+            response += f"**⏰ Maturity range:** {min_maturity:.0f} - {max_maturity:.0f} days (avg: {avg_maturity:.1f})\n"
+        
+        response += f"\n**💡 Tip:** Ask for a chart or visualization to see the data graphically!\n"
+        
+        return response, response, {}
+
+# Function schema for OpenAI function calling
 function_schema = {
     "name": "query_bean_data",
-    "description": "Query dry bean trial data with filtering, analysis, and visualization options",
+    "description": "Query the Ontario bean trial dataset for cultivar performance, yield data, maturity information, and location-specific results. Use this when users ask about specific bean varieties, yields, growing conditions, or want to compare cultivars.",
     "parameters": {
         "type": "object",
         "properties": {
-            "year": {"type": "integer", "description": "Single year to filter by"},
-            "year_start": {"type": "integer", "description": "Start year for range filtering"},
-            "year_end": {"type": "integer", "description": "End year for range filtering"},
-            "location": {"type": "string", "description": "Location code (e.g., WOOD, ELOR, HARR)"},
-            "bean_type": {"type": "string", "description": "Type of bean: 'white bean' or 'coloured bean'"},
-            "trial_group": {"type": "string", "description": "Trial group classification: 'major' (main trials) or 'minor' (secondary trials)"},
-            "cultivar": {"type": "string", "description": "Cultivar name or partial name to search for"},
-            "min_yield": {"type": "number", "description": "Minimum yield threshold"},
-            "max_maturity": {"type": "number", "description": "Maximum maturity days"},
-            "sort": {"type": "string", "enum": ["highest", "lowest"], "description": "Sort order for results"},
-            "limit": {"type": "integer", "description": "Maximum number of results to return"},
+            "original_question": {
+                "type": "string",
+                "description": "The original user question for context"
+            },
+            "cultivar": {
+                "type": "string",
+                "description": "Specific cultivar name to query (optional)"
+            },
+            "location": {
+                "type": "string", 
+                "description": "Research station location (e.g., WOOD, WINC, STHM, AUBN) (optional)"
+            },
+            "year": {
+                "type": "integer",
+                "description": "Specific year to query (optional)"
+            },
+            "trait": {
+                "type": "string",
+                "description": "Specific trait to analyze (e.g., 'yield', 'maturity', 'lodging') (optional)"
+            },
             "analysis_type": {
                 "type": "string",
-                "enum": ["average", "sum", "count", "max", "min", "median", "std", "similar", "compare", "yearly_average", "trend", "visualization", "scatter", "location_analysis", "cultivar_analysis"],
-                "description": "Type of analysis to perform"
-            },
-            "analysis_column": {"type": "string", "description": "Column to analyze (Yield, Maturity, etc.)"},
-            "chart_type": {"type": "string", "enum": ["pie", "bar", "line", "histogram", "area", "scatter"], "description": "Specific chart type for visualization"}
-        }
+                "description": "Type of analysis requested (e.g., 'comparison', 'summary', 'chart', 'trend') (optional)"
+            }
+        },
+        "required": ["original_question"]
     }
 } 

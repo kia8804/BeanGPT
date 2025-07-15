@@ -8,65 +8,30 @@ import torch.nn.functional as F
 import numpy as np
 from pathlib import Path
 import orjson
-from openai import OpenAI
+# Using OpenAI through wrapper to avoid proxy issues
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModel
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
 
-from utils.ncbi_utils import extract_gene_mentions, map_to_gene_id, load_gene_db, load_uniprot_db
+from config import settings
+from database.manager import db_manager
+from utils.ncbi_utils import extract_gene_mentions, map_to_gene_id
 from utils.bean_data import function_schema, answer_bean_query
 
 # Load environment variables
 load_dotenv()
 
-# --- Config ---
-BGE_INDEX_NAME = "dry-bean-bge-abstract"
-PUBMEDBERT_INDEX_NAME = "dry-bean-pubmedbert-abstract"
-BGE_MODEL = "BAAI/bge-base-en-v1.5"
-PUBMEDBERT_MODEL = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
-TOP_K = 8
-ALPHA = 0.6
-
-# Initialize OpenAI client
-# client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
 # Initialize Pinecone
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-if not PINECONE_API_KEY:
-    raise ValueError("PINECONE_API_KEY environment variable is not set")
-
-pc = Pinecone(api_key=PINECONE_API_KEY)
+pc = Pinecone(api_key=settings.pinecone_api_key)
 
 # --- Load Models ---
-bge_model = SentenceTransformer(BGE_MODEL)
-tokenizer = AutoTokenizer.from_pretrained(PUBMEDBERT_MODEL)
-pub_model = AutoModel.from_pretrained(PUBMEDBERT_MODEL)
+bge_model = SentenceTransformer(settings.bge_model)
+tokenizer = AutoTokenizer.from_pretrained(settings.pubmedbert_model)
+pub_model = AutoModel.from_pretrained(settings.pubmedbert_model)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pub_model.to(device).eval()
-
-# Load gene databases
-GENE_DB_PATH = os.getenv("GENE_DB_PATH", "../data/NCBI_Filtered_Data_Enriched.xlsx")
-UNIPROT_DB_PATH = os.getenv("UNIPROT_DB_PATH", "../data/uniprotkb_Phaseolus_vulgaris.xlsx")
-RAG_FILE = os.getenv("RAG_FILE", "../data/summaries.jsonl")
-
-# Load gene data
-load_gene_db(GENE_DB_PATH)
-print(f"Loaded gene database from {GENE_DB_PATH}")
-
-# Load UniProt data
-load_uniprot_db(UNIPROT_DB_PATH)
-print(f"Loaded UniProt database from {UNIPROT_DB_PATH}")
-
-# Load RAG data
-try:
-    with open(RAG_FILE, 'r', encoding='utf-8') as f:
-        rag_data = [json.loads(line) for line in f]
-except UnicodeDecodeError:
-    # Fallback to latin-1 if utf-8 fails
-    with open(RAG_FILE, 'r', encoding='latin-1') as f:
-        rag_data = [json.loads(line) for line in f]
 
 # --- RAG Context Loading ---
 def load_rag_text_jsonl(path: Path) -> Dict[str, str]:
@@ -90,7 +55,7 @@ def load_rag_text_jsonl(path: Path) -> Dict[str, str]:
                     rag_lookup[doi.strip()] = rag.strip()
     return rag_lookup
 
-RAG_LOOKUP = load_rag_text_jsonl(Path(RAG_FILE))
+RAG_LOOKUP = load_rag_text_jsonl(Path(settings.rag_file))
 
 def get_rag_context_from_dois(dois: List[str]) -> Tuple[str, List[str]]:
     context_blocks = []
@@ -122,7 +87,7 @@ def embed_query_pubmedbert(query: str) -> List[float]:
         return normalized.cpu().numpy().tolist()[0]
 
 def query_pinecone(index_name: str, vector: List[float]):
-    return pc.Index(index_name).query(vector=vector, top_k=TOP_K, include_metadata=True)
+    return pc.Index(index_name).query(vector=vector, top_k=settings.top_k, include_metadata=True)
 
 def normalize_scores(matches):
     scores = [m["score"] for m in matches]
@@ -133,7 +98,7 @@ def normalize_scores(matches):
         m["metadata"].get("doi", f"{m['id']}"): norm[i] for i, m in enumerate(matches)
     }
 
-def combine_scores(bge_scores: dict, pub_scores: dict, alpha: float = ALPHA) -> dict:
+def combine_scores(bge_scores: dict, pub_scores: dict, alpha: float = settings.alpha) -> dict:
     all_sources = set(bge_scores) | set(pub_scores)
     combined = {}
     for src in all_sources:
@@ -150,11 +115,8 @@ def is_genetics_question(question: str, api_key: str) -> bool:
     Determine if a question is about genetics/molecular biology using OpenAI.
     Now requires user-provided API key.
     """
-    api_key = api_key or os.getenv("OPENAI_API_KEY")  # fallback to env var
-    if not api_key:
-        raise ValueError("OpenAI API key is required")
-    
-    client = OpenAI(api_key=api_key)
+    from utils.openai_client import create_openai_client
+    client = create_openai_client(api_key)
     
     try:
         response = client.chat.completions.create(
@@ -185,11 +147,8 @@ def is_genetics_question(question: str, api_key: str) -> bool:
 
 def query_openai(context: str, source_list: List[str], question: str, conversation_history: List[Dict] = None, api_key: str = None) -> str:
     # Create client with user-provided API key
-    api_key = api_key or os.getenv("OPENAI_API_KEY")  # fallback to env var
-    if not api_key:
-        raise ValueError("OpenAI API key is required")
-    
-    client = OpenAI(api_key=api_key)
+    from utils.openai_client import create_openai_client
+    client = create_openai_client(api_key)
     
     # Adjust system prompt based on whether this is a follow-up to bean data analysis
     system_content = (
@@ -255,11 +214,8 @@ def query_openai(context: str, source_list: List[str], question: str, conversati
 
 def query_openai_stream(context: str, source_list: List[str], question: str, conversation_history: List[Dict] = None, api_key: str = None):
     # Create client with user-provided API key
-    api_key = api_key or os.getenv("OPENAI_API_KEY")  # fallback to env var
-    if not api_key:
-        raise ValueError("OpenAI API key is required")
-    
-    client = OpenAI(api_key=api_key)
+    from utils.openai_client import create_openai_client
+    client = create_openai_client(api_key)
     
     # Adjust system prompt based on whether this is a follow-up to bean data analysis
     system_content = (
@@ -348,7 +304,8 @@ def generate_suggested_questions(
         print("No OpenAI API key found, skipping suggested questions generation")
         return []
     
-    client = OpenAI(api_key=api_key)
+    from utils.openai_client import create_openai_client
+    client = create_openai_client(api_key)
 
     prompt = (
         "Based on the following assistant response (answer and potentially data/sources), "
@@ -402,12 +359,9 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     # Immediately show thinking indicator
     yield {"type": "progress", "data": {"step": "thinking", "detail": "Thinking..."}}
     
-    api_key = api_key or os.getenv("OPENAI_API_KEY")  # fallback to env var
-    if not api_key:
-        raise ValueError("OpenAI API key is required")
-    
     # Create client with user-provided API key
-    client = OpenAI(api_key=api_key)
+    from utils.openai_client import create_openai_client
+    client = create_openai_client(api_key)
     
     # Initialize bean data variables
     bean_chart_data = {}
@@ -431,7 +385,7 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
         
         # Check for bean data keywords - broader detection for data analysis
         bean_keywords = ["yield", "maturity", "cultivar", "variety", "performance", "bean", "production", "steam", "lighthouse", "seal"]
-        chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate"]
+        chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate", "table", "display"]
         
         # Trigger bean data analysis for relevant questions
         has_bean_keywords = any(keyword in question.lower() for keyword in bean_keywords)
@@ -442,7 +396,17 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
             function_call_messages = [
                 {
                     "role": "system",
-                    "content": "You are a dry bean research platform. If the user asks for bean performance data, charts, or cultivar analysis, call the appropriate function."
+                    "content": (
+                        "You are a dry bean research platform with access to Ontario bean trial data. "
+                        "ALWAYS call the query_bean_data function when the user asks for:\n"
+                        "- Bean performance data (yield, maturity, etc.)\n"
+                        "- Charts, plots, graphs, or visualizations of bean data\n"
+                        "- Cultivar comparisons or analysis\n"
+                        "- Questions about specific bean varieties\n"
+                        "- Questions about trial results or research station data\n"
+                        "- Any question that mentions bean characteristics, locations, or years\n\n"
+                        "The user's question mentions bean-related terms, so you should call the function."
+                    )
                 }
             ]
             
@@ -460,14 +424,17 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
             )
 
             choice = response.choices[0]
+            
             if choice.finish_reason == "function_call":
                 yield {"type": "progress", "data": {"step": "processing", "detail": "Processing cultivar data"}}
                 
                 call = choice.message.function_call
+                
                 if call.name == "query_bean_data":
                     args = json.loads(call.arguments)
                     args['original_question'] = question
                     args['api_key'] = api_key
+                    
                     preview, full_md, chart_data = answer_bean_query(args)
                     
                     if preview and not preview.strip().startswith("## 🔍 **Dataset Query Results**\n\nNo matching"):
@@ -482,12 +449,14 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
                                 {
                                     "role": "system",
                                     "content": (
-                                        "You are a dry bean research assistant analyzing Ontario research station data. "
-                                        "IMPORTANT: This dataset contains Ontario bean trial data from research stations (WOOD, WINC, STHM, etc.) - NOT global country data. "
+                                        "You are a dry bean research analyst reporting to PhD researchers. "
+                                        "CRITICAL: Never provide 'steps for analysis' or tell researchers what they should do. "
+                                        "Instead, present direct analytical findings, statistical results, and conclusions. "
+                                        "This dataset contains Ontario bean trial data from research stations (WOOD, WINC, STHM, etc.) - NOT global country data. "
                                         "Do not refer to this as 'sample data' - this is the complete dataset available. "
-                                        "Provide a comprehensive analysis of the data results in clean professional markdown. "
-                                        "Use **bold** for key findings, bullet points for lists, and reference the data directly. "
-                                        "If the user asks for global/world data, clarify that this dataset contains Ontario research station data only."
+                                        "Provide direct analytical results with specific numbers, statistical significance where relevant, and evidence-based conclusions. "
+                                        "Use **bold** for key findings and quantitative results. "
+                                        "If global/world data is requested, state clearly that only Ontario research station data is available and provide the available analysis."
                                     ),
                                 },
                                 {
@@ -522,7 +491,6 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
                         bean_chart_data = {}
                         bean_full_md = ""
             else:
-                # GPT decided not to use function, continue to RAG
                 yield {"type": "progress", "data": {"step": "generation", "detail": "Proceeding to literature search"}}
                 
                 # Add transition to literature search
@@ -546,14 +514,14 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     
     yield {"type": "progress", "data": {"step": "search", "detail": "Searching literature database"}}
     
-    bge_res = query_pinecone(BGE_INDEX_NAME, bge_vec)
-    pub_res = query_pinecone(PUBMEDBERT_INDEX_NAME, pub_vec)
+    bge_res = query_pinecone(settings.bge_index_name, bge_vec)
+    pub_res = query_pinecone(settings.pubmedbert_index_name, pub_vec)
 
     bge_scores = normalize_scores(bge_res["matches"])
     pub_scores = normalize_scores(pub_res["matches"])
     combined_scores = combine_scores(bge_scores, pub_scores)
 
-    top_sources = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:TOP_K]
+    top_sources = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:settings.top_k]
     top_dois = [src for src, _ in top_sources]
     
     yield {"type": "progress", "data": {"step": "papers", "detail": f"Found {len(top_dois)} relevant papers"}}
@@ -590,55 +558,42 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     # Map genes to their summaries with preview URLs
     gene_summaries = []
     for gene in gene_mentions:
-        # db_hits now contains GPT genes that were validated against databases
-        # gpt_hits contains all GPT genes
-        # So we don't need the possible_flag logic anymore since all genes come from GPT
-        possible_flag = False
-        gene_info = map_to_gene_id(gene)
-        if gene_info:
-            if gene_info["source"] == "NCBI":
-                preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_info['gene_id']}"
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"![NCBI Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
-                    "link": preview_url,
-                    "source": "NCBI Gene Database" if not possible_flag else "NCBI Gene Database (Possible Match)",
-                    "description": gene_info['description']
-                })
-            elif gene_info["source"] == "UniProt":
-                preview_url = f"https://www.uniprot.org/uniprotkb/{gene_info['entry']}"
+        # Try to get gene ID from NCBI database
+        gene_id = map_to_gene_id(gene)
+        if gene_id:
+            # Get summary from NCBI database
+            from utils.ncbi_utils import get_gene_summary
+            gene_summary = get_gene_summary(gene_id)
+            preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_id}"
+            gene_summaries.append({
+                "name": gene,
+                "summary": f"![NCBI Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
+                "link": preview_url,
+                "source": "NCBI Gene Database",
+                "description": gene_summary or f"Gene ID: {gene_id}"
+            })
+        else:
+            # Try to get UniProt information
+            from utils.ncbi_utils import get_uniprot_info
+            uniprot_info = get_uniprot_info(gene)
+            if uniprot_info:
+                preview_url = f"https://www.uniprot.org/uniprotkb/{uniprot_info['entry']}"
                 gene_summaries.append({
                     "name": gene,
                     "summary": f"![UniProt Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
                     "link": preview_url,
-                    "source": "UniProt Protein Database" if not possible_flag else "UniProt Protein Database (Possible Match)",
-                    "description": gene_info['description']
-                })
-            elif gene_info["source"] == "GPT-4o":
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"- {gene_info['description']}\n- Generated by AI analysis",
-                    "source": "AI Analysis" if not possible_flag else "AI Analysis (Possible Match)",
-                    "description": gene_info['description'],
-                    "generated": True
+                    "source": "UniProt Protein Database",
+                    "description": uniprot_info['protein_names'] or f"UniProt Entry: {uniprot_info['entry']}"
                 })
             else:
-                source_label = gene_info['source'] if not possible_flag else f"Possible {gene_info['source']}"
+                # Gene not found in databases, add basic info
                 gene_summaries.append({
                     "name": gene,
-                    "summary": f"- Description: `{gene_info['description']}`\n- Source: {source_label}",
-                    "source": source_label,
-                    "description": gene_info['description']
+                    "summary": f"- Gene identifier: {gene}\n- Source: Literature mention",
+                    "source": "Literature Mention",
+                    "description": f"Gene mentioned in research literature: {gene}",
+                    "not_found": True
                 })
-        else:
-            # Gene identified but not found in any database
-            gene_summaries.append({
-                "name": gene,
-                "summary": f"- Genetic element mentioned in context\n- No database match found",
-                "source": "Literature Reference" if not possible_flag else "Literature Reference (Possible Match)",
-                "description": f"This genetic element was identified in the research context but could not be matched to existing databases.",
-                "not_found": True
-            })
 
     genes = gene_summaries
 
@@ -664,15 +619,12 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     }
 
 def answer_question(question: str, conversation_history: List[Dict] = None, api_key: str = None) -> Tuple[str, List[str], List[dict], str]:
-    api_key = api_key or os.getenv("OPENAI_API_KEY")  # fallback to env var
-    if not api_key:
-        raise ValueError("OpenAI API key is required")
-    
     is_genetic = is_genetics_question(question, api_key)
     print(f"🧪 Is this a genetics question? {is_genetic}")
     
     # Create client with user-provided API key
-    client = OpenAI(api_key=api_key)
+    from utils.openai_client import create_openai_client
+    client = create_openai_client(api_key)
     
     # Initialize transition_message
     transition_message = ""
@@ -680,7 +632,7 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     if not is_genetic:
         # Check for bean data keywords - broader detection for data analysis
         bean_keywords = ["yield", "maturity", "cultivar", "variety", "performance", "bean", "production", "steam", "lighthouse", "seal"]
-        chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate"]
+        chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate", "table", "display"]
         
         # Trigger bean data analysis for relevant questions
         has_bean_keywords = any(keyword in question.lower() for keyword in bean_keywords)
@@ -747,15 +699,15 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     pub_vec = embed_query_pubmedbert(question)
     
     print("🔎 Querying Pinecone...")
-    bge_matches = query_pinecone(BGE_INDEX_NAME, bge_vec)
-    pub_matches = query_pinecone(PUBMEDBERT_INDEX_NAME, pub_vec)
+    bge_matches = query_pinecone(settings.bge_index_name, bge_vec)
+    pub_matches = query_pinecone(settings.pubmedbert_index_name, pub_vec)
     print("✅ Pinecone queries completed.")
 
     bge_scores = normalize_scores(bge_matches["matches"])
     pub_scores = normalize_scores(pub_matches["matches"])
     combined_scores = combine_scores(bge_scores, pub_scores)
 
-    top_sources = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:TOP_K]
+    top_sources = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:settings.top_k]
     top_dois = [src for src, _ in top_sources]
     print("🔎 Top DOIs from Pinecone:", top_dois)
 
@@ -779,51 +731,42 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     # Map genes to their summaries with preview URLs
     gene_summaries = []
     for gene in gene_mentions:
-        possible_flag = False
-        gene_info = map_to_gene_id(gene)
-        if gene_info:
-            if gene_info["source"] == "NCBI":
-                preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_info['gene_id']}"
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"![NCBI Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
-                    "link": preview_url,
-                    "source": "NCBI Gene Database",
-                    "description": gene_info['description']
-                })
-            elif gene_info["source"] == "UniProt":
-                preview_url = f"https://www.uniprot.org/uniprotkb/{gene_info['entry']}"
+        # Try to get gene ID from NCBI database
+        gene_id = map_to_gene_id(gene)
+        if gene_id:
+            # Get summary from NCBI database
+            from utils.ncbi_utils import get_gene_summary
+            gene_summary = get_gene_summary(gene_id)
+            preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_id}"
+            gene_summaries.append({
+                "name": gene,
+                "summary": f"![NCBI Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
+                "link": preview_url,
+                "source": "NCBI Gene Database",
+                "description": gene_summary or f"Gene ID: {gene_id}"
+            })
+        else:
+            # Try to get UniProt information
+            from utils.ncbi_utils import get_uniprot_info
+            uniprot_info = get_uniprot_info(gene)
+            if uniprot_info:
+                preview_url = f"https://www.uniprot.org/uniprotkb/{uniprot_info['entry']}"
                 gene_summaries.append({
                     "name": gene,
                     "summary": f"![UniProt Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
                     "link": preview_url,
                     "source": "UniProt Protein Database",
-                    "description": gene_info['description']
-                })
-            elif gene_info["source"] == "GPT-4o":
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"- {gene_info['description']}\n- Generated by AI analysis",
-                    "source": "AI Analysis",
-                    "description": gene_info['description'],
-                    "generated": True
+                    "description": uniprot_info['protein_names'] or f"UniProt Entry: {uniprot_info['entry']}"
                 })
             else:
+                # Gene not found in databases, add basic info
                 gene_summaries.append({
                     "name": gene,
-                    "summary": f"- Description: `{gene_info['description']}`\n- Source: {gene_info['source']}",
-                    "source": gene_info['source'],
-                    "description": gene_info['description']
+                    "summary": f"- Gene identifier: {gene}\n- Source: Literature mention",
+                    "source": "Literature Mention",
+                    "description": f"Gene mentioned in research literature: {gene}",
+                    "not_found": True
                 })
-        else:
-            # Gene identified but not found in any database
-            gene_summaries.append({
-                "name": gene,
-                "summary": f"- Genetic element mentioned in context\n- No database match found",
-                "source": "Literature Reference",
-                "description": f"This genetic element was identified in the research context but could not be matched to existing databases.",
-                "not_found": True
-            })
 
     print(f"✅ Gene extraction completed. Found {len(gene_summaries)} genes.")
     return final_answer, confirmed_dois, gene_summaries, "" 
