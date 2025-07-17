@@ -74,7 +74,7 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
         unique_vals = df[col].unique()
         if len(unique_vals) <= 20:  # Only show if reasonable number of unique values
             categorical_info[col] = list(unique_vals)[:10]
-    
+
     system_msg = (
         "CRITICAL INSTRUCTION: Output ONLY executable Python code. No explanations, no text, no markdown formatting, no comments about what you're doing.\n\n"
         

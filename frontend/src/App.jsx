@@ -13,19 +13,43 @@ import PlotlyChart from './components/PlotlyChart.jsx';
 const initialMessages = [
   {
     sender: 'assistant',
-    text: `## Welcome to **BeanGPT** - Powered by Beans
+    text: `# **👩‍🔬 Welcome to BeanGPT!**
 
-I'm your dedicated research assistant for **dry bean genetics and breeding**. I can help you with:
+### **Your AI-Powered Partner for Bean Breeding & Computational Biology**
 
-• **Gene Analysis** - Function, expression, and resistance mechanisms
+---
 
-• **Cultivar Performance** - Yield data, trials, and comparative analysis  
+BeanGPT is a next-generation, domain-specialized large language model built to boost research in bean breeding and computational biology. 
 
-• **Research Literature** - PubMed papers and citations
+Trained on over **100 million words** from a curated collection of more than **300,000 peer-reviewed papers** from Web of Science and PubMed, OPCC field trial datasets from Ontario, technical reports, and multi-omics resources, BeanGPT provides deep and comprehensive coverage of the scientific landscape. 
 
-• **Statistical Analysis** - Performance metrics and data insights
+With a broad representation of over **42 scientific and common names** across major species, including *Phaseolus*, *Glycine*, *Vicia*, *Lens*, *Pisum*, and *Lupinus*, BeanGPT uses advanced generative AI to support hypothesis generation, data synthesis, and literature insights, accelerating progress in bean research and crop improvement.
 
-**Ready to start your research session?** Ask me about specific genes, cultivar performance, or browse recent studies.`,
+---
+
+## **How Can You Use BeanGPT?**
+
+**🔬 Explore Genes and Traits**  
+Ask about genes, traits, proteins, and other multi-omics features, targeted to specific regions or populations of interest.
+
+**📊 Analyze Field Trials**  
+Query historical field trial summaries for particular cultivars and locations to compare performance and adaptation.
+
+**📚 Request Literature Reviews**  
+Get concise, citation-backed literature syntheses on resistance genes, agronomic traits, or other key topics.
+
+**📈 Visualize and Predict**  
+Visualize performance trends or predict genotype responses to new environments using integrated scientific data.
+
+**🌱 Access Breeding Guidance**  
+Receive best-practice breeding recommendations, informed by both global advances and local research findings.
+
+---
+
+### 🚀 **Ready to Accelerate Your Bean Breeding Research?**
+Type your question or upload your data below, let BeanGPT do the heavy lifting!
+
+### 🌟 **Built by computational plant breeders for a wide range of scientists and researchers.**`,
     isWelcome: true
   }
 ];
