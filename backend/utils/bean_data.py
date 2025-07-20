@@ -150,7 +150,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         return clarification_message, clarification_message, {}
     
     # Check if charts are requested
-    chart_keywords = ['chart', 'graph', 'plot', 'visualize', 'visualization', 'show me', 'display', 'table', 'create']
+    chart_keywords = ['chart', 'graph', 'plot', 'visualize', 'visualization', 'show me', 'display', 'table', 'create', 'regression', 'linear regression', 'correlation', 'scatter', 'trend', 'relationship']
     chart_requested = any(keyword in original_question.lower() for keyword in chart_keywords)
     
     if chart_requested and api_key:
