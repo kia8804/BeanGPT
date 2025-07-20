@@ -327,7 +327,11 @@ export default function App() {
     const userMsgText = input;
     const userMsg = { sender: 'user', text: userMsgText, timestamp: new Date() };
 
-    setMessages((msgs) => [...msgs, userMsg]);
+    // Hide any existing research toggles when asking a new question
+    setMessages((msgs) => [
+      ...msgs.map(msg => ({ ...msg, showResearchToggle: false })),
+      userMsg
+    ]);
     setInput('');
     
     // Reset states
