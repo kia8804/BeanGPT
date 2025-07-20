@@ -133,7 +133,8 @@ class DatabaseManager:
             if not self.gene_db.empty:
                 ncbi_matches = self.gene_db[
                     self.gene_db['Symbol'].str.contains(gene_name, case=False, na=False) |
-                    self.gene_db['Synonyms'].str.contains(gene_name, case=False, na=False)
+                    self.gene_db['FullGeneName'].str.contains(gene_name, case=False, na=False) |
+                    self.gene_db['Description'].str.contains(gene_name, case=False, na=False)
                 ]
                 if not ncbi_matches.empty:
                     return True

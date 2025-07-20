@@ -114,6 +114,112 @@ export default function App() {
     }));
   };
 
+  // Handle research continuation when user clicks the toggle
+  const handleContinueResearch = async (originalQuestion, messageIndex) => {
+    try {
+      // Capture the current message content before starting
+      const currentMessage = messages[messageIndex];
+      const originalMessageContent = currentMessage.text;
+      
+      setIsLoading(true);
+      setIsStreaming(true);
+      setStreamingText('');
+
+      const response = await fetch('http://localhost:8000/api/continue-research', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: originalQuestion,
+          conversation_history: getConversationHistory()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let researchText = '';
+      let buffer = '';
+
+
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          buffer += chunk;
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const jsonStr = line.slice(6).trim();
+                if (!jsonStr) continue;
+                
+                const data = JSON.parse(jsonStr);
+                
+                if (data.type === 'content') {
+                  setIsLoading(false);
+                  researchText += data.data;
+                  setStreamingText(researchText);
+                } else if (data.type === 'metadata') {
+                  setIsStreaming(false);
+                  
+                  // Update the message to include research results - use captured original content
+                  setMessages(prev => prev.map((msg, idx) => {
+                    if (idx === messageIndex) {
+                      return {
+                        ...msg,
+                        text: originalMessageContent + researchText, // Original content + complete research text
+                        sources: data.data.sources || [], // Add sources from research
+                        genes: data.data.genes || [], // Add genes from research
+                        showResearchToggle: false // Hide the toggle after completion
+                      };
+                    }
+                    return msg;
+                  }));
+                  
+                  setStreamingText('');
+                } else if (data.type === 'done') {
+                  break;
+                }
+              } catch (e) {
+                console.error('Error parsing research continuation data:', e);
+                continue;
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    } catch (error) {
+      console.error('Error continuing with research:', error);
+      setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingText('');
+      
+      // On error, just hide the toggle without adding research content
+      setMessages(prev => prev.map((msg, idx) => {
+        if (idx === messageIndex) {
+          return {
+            ...msg,
+            text: originalMessageContent, // Restore original content
+            showResearchToggle: false
+          };
+        }
+        return msg;
+      }));
+    }
+  };
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
@@ -376,6 +482,27 @@ export default function App() {
                     const finalStepIndex = currentSteps.findIndex(step => step.step.includes('Finalizing') || step.step.includes('output'));
                     if (finalStepIndex >= 0) setCurrentStep(finalStepIndex);
                   }
+                } else if (data.type === 'bean_complete') {
+                  // Bean data analysis is complete, show toggle for research continuation
+                  setIsLoading(false);
+                  setIsStreaming(false);
+                  
+                  setMessages(prev => [...prev, {
+                    sender: 'assistant',
+                    text: fullText,
+                    sources: [],
+                    genes: [],
+                    fullMarkdownTable: data.data.full_markdown_table,
+                    suggestedQuestions: [],
+                    chartData: data.data.chart_data,
+                    timestamp: new Date(),
+                    showResearchToggle: true, // Flag to show the research toggle
+                    originalQuestion: userMsgText // Store the original question for research continuation
+                  }]);
+                  
+                  setStreamingText('');
+                  return; // Stop processing here
+                  
                 } else if (data.type === 'metadata') {
                   // Update actual paper count
                   if (data.data.sources && data.data.sources.length > 0) {
@@ -1015,6 +1142,65 @@ export default function App() {
                            </div>
                         )}
 
+                        {/* Research Toggle Section */}
+                        {msg.showResearchToggle && (
+                          <div className={`mt-6 p-5 rounded-xl border-2 border-dashed ${
+                            darkMode 
+                              ? 'bg-slate-800/50 border-blue-400 text-slate-200' 
+                              : 'bg-blue-50 border-blue-400 text-gray-800'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1">
+                                <h4 className="text-lg font-semibold mb-2 flex items-center space-x-2">
+                                  <span>📚</span>
+                                  <span>Continue with Research Literature?</span>
+                                </h4>
+                                <p className="text-sm opacity-90 mb-4">
+                                  Search scientific publications for additional genetic and biological insights related to your analysis.
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex space-x-3">
+                              <button
+                                onClick={() => handleContinueResearch(msg.originalQuestion || "Continue research", idx)}
+                                disabled={isLoading || isStreaming}
+                                className={`px-6 py-3 rounded-lg font-medium transition-all text-sm ${
+                                  darkMode
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'
+                                    : 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'
+                                } disabled:cursor-not-allowed shadow-lg hover:shadow-xl`}
+                              >
+                                {isLoading || isStreaming ? (
+                                  <span className="flex items-center space-x-2">
+                                    <FaSpinner className="animate-spin" />
+                                    <span>Searching...</span>
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center space-x-2">
+                                    <FaSearch />
+                                    <span>Yes, Continue Research</span>
+                                  </span>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setMessages(prev => prev.map((m, i) => 
+                                    i === idx ? { ...m, showResearchToggle: false } : m
+                                  ));
+                                }}
+                                disabled={isLoading || isStreaming}
+                                className={`px-4 py-3 rounded-lg font-medium transition-all text-sm ${
+                                  darkMode
+                                    ? 'bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-50'
+                                    : 'bg-gray-300 hover:bg-gray-400 text-gray-700 disabled:opacity-50'
+                                } disabled:cursor-not-allowed`}
+                              >
+                                No, Stop Here
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Suggested Questions */}
                         {msg.suggestedQuestions && msg.suggestedQuestions.length > 0 && (
                           <div className={`mt-6 p-4 rounded-xl ${darkMode ? 'bg-slate-800 border border-slate-700' : 'bg-gray-50 border border-gray-200'}`}>
@@ -1053,7 +1239,7 @@ export default function App() {
               </div>
             ))}
 
-            {/* Streaming Message */}
+            {/* Streaming Message - Research Continuation */}
             {isStreaming && streamingText && (
               <div className="flex justify-start">
                 <div className="max-w-[85%]">
@@ -1062,7 +1248,7 @@ export default function App() {
                       AI
                     </div>
                     <span className="text-xs text-gray-500 dark:text-slate-400">BeanGPT AI</span>
-                    <span className="text-xs text-green-500 dark:text-green-400">Generating...</span>
+                    <span className="text-xs text-blue-500 dark:text-blue-400">Adding Research Context...</span>
                   </div>
                   <div className={`p-5 rounded-2xl shadow-sm border text-sm ${
                     darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'
@@ -1102,7 +1288,7 @@ export default function App() {
                     >
                       {streamingText}
                     </ReactMarkdown>
-                    <span className="inline-block w-2 h-5 bg-green-500 animate-pulse ml-1"></span>
+                    <span className="inline-block w-2 h-5 bg-blue-500 animate-pulse ml-1"></span>
                   </div>
                 </div>
               </div>

@@ -351,6 +351,114 @@ def generate_suggested_questions(
         print(f"Error generating suggested questions: {e}")
         return []
 
+def continue_with_research_stream(question: str, conversation_history: List[Dict] = None, api_key: str = None):
+    """
+    Continue with research literature search after bean data analysis.
+    This is called when the user chooses to proceed with research after bean data.
+    """
+    # Add transition to literature search
+    transition_text = "\n\n---\n\n## 📚 **Related Research Literature**\n\nSearching scientific publications for additional context and insights...\n\n"
+    for char in transition_text:
+        yield {"type": "content", "data": char}
+    
+    yield {"type": "progress", "data": {"step": "embeddings", "detail": "Processing semantic embeddings"}}
+    
+    bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
+    pub_vec = embed_query_pubmedbert(question)
+    
+    yield {"type": "progress", "data": {"step": "search", "detail": "Searching literature database"}}
+    
+    bge_res = query_pinecone(settings.bge_index_name, bge_vec)
+    pub_res = query_pinecone(settings.pubmedbert_index_name, pub_vec)
+
+    bge_scores = normalize_scores(bge_res["matches"])
+    pub_scores = normalize_scores(pub_res["matches"])
+    combined_scores = combine_scores(bge_scores, pub_scores)
+
+    top_sources = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:settings.top_k]
+    top_dois = [src for src, _ in top_sources]
+    
+    yield {"type": "progress", "data": {"step": "papers", "detail": f"Found {len(top_dois)} relevant papers"}}
+    
+    print("🔎 Top DOIs from Pinecone:", top_dois)
+
+    context, source_list = get_rag_context_from_dois(top_dois)
+    
+    yield {"type": "progress", "data": {"step": "generation", "detail": "Synthesizing findings with AI"}}
+
+    # Modify question to indicate this is a follow-up to bean data analysis
+    rag_question = f"We successfully analyzed the bean data for: '{question}'. Now provide additional research context from scientific literature about the genetic and biological factors related to this analysis."
+    
+    # Stream the response
+    for chunk in query_openai_stream(context, source_list, rag_question, conversation_history, api_key):
+        yield {"type": "content", "data": chunk}
+
+    yield {"type": "progress", "data": {"step": "genes", "detail": "Analyzing genetic elements"}}
+
+    # Get the full response for gene extraction
+    full_response = query_openai(context, source_list, rag_question, conversation_history, api_key)
+    
+    # Extract genes from the complete answer
+    print("🧬 Extracting gene mentions...")
+    gene_mentions, db_hits, gpt_hits = extract_gene_mentions(full_response)
+    print(f"Found gene mentions: {gene_mentions}")
+
+    # Map genes to their summaries with preview URLs
+    gene_summaries = []
+    for gene in gene_mentions:
+        # Try to get gene ID from NCBI database
+        gene_id = map_to_gene_id(gene)
+        if gene_id:
+            # Get summary from NCBI database
+            from utils.ncbi_utils import get_gene_summary
+            gene_summary = get_gene_summary(gene_id)
+            preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_id}"
+            gene_summaries.append({
+                "name": gene,
+                "summary": f"![NCBI Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
+                "link": preview_url,
+                "source": "NCBI Gene Database",
+                "description": gene_summary or f"Gene ID: {gene_id}"
+            })
+        else:
+            # Try to get UniProt information
+            from utils.ncbi_utils import get_uniprot_info
+            uniprot_info = get_uniprot_info(gene)
+            if uniprot_info:
+                preview_url = f"https://www.uniprot.org/uniprotkb/{uniprot_info['entry']}"
+                gene_summaries.append({
+                    "name": gene,
+                    "summary": f"![UniProt Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
+                    "link": preview_url,
+                    "source": "UniProt Protein Database",
+                    "description": uniprot_info['protein_names'] or f"UniProt Entry: {uniprot_info['entry']}"
+                })
+            else:
+                # Gene not found in databases, add basic info
+                gene_summaries.append({
+                    "name": gene,
+                    "summary": f"- Gene identifier: {gene}\n- Source: Literature mention",
+                    "source": "Literature Mention",
+                    "description": f"Gene mentioned in research literature: {gene}",
+                    "not_found": True
+                })
+
+    genes = gene_summaries
+
+    yield {"type": "progress", "data": {"step": "finalizing", "detail": "Completing analysis"}}
+
+    yield {
+        "type": "metadata",
+        "data": {
+            "sources": source_list,
+            "genes": genes,
+            "full_markdown_table": "",
+            "chart_data": {},
+            "suggested_questions": []
+        }
+    }
+
+
 def answer_question_stream(question: str, conversation_history: List[Dict] = None, api_key: str = None):
     """
     Stream the answer to a question with progress updates.
@@ -478,13 +586,18 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
                         bean_full_md = full_md
                         bean_data_found = True
                         
-                        # Continue with research literature search
-                        yield {"type": "progress", "data": {"step": "literature_search", "detail": "Searching research papers for additional insights"}}
-                        
-                        # Add transition to literature search
-                        transition_text = "\n\n---\n\n## 📚 **Related Research Literature**\n\nSearching scientific publications for additional context and insights...\n\n"
-                        for char in transition_text:
-                            yield {"type": "content", "data": char}
+                        # Instead of automatically continuing, send a toggle for user choice
+                        yield {
+                            "type": "bean_complete",
+                            "data": {
+                                "sources": [],
+                                "genes": [],
+                                "full_markdown_table": full_md,
+                                "chart_data": chart_data,
+                                "suggested_questions": []
+                            }
+                        }
+                        return  # Stop here, don't continue to research automatically
                     else:
                         # No data found, fall back to literature search
                         yield {"type": "progress", "data": {"step": "fallback", "detail": "No data found, searching literature"}}
@@ -506,7 +619,7 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
             for char in transition_text:
                 yield {"type": "content", "data": char}
 
-    # --- Genetics question flow ---
+    # --- Continue with research literature search for all non-bean-data cases ---
     yield {"type": "progress", "data": {"step": "embeddings", "detail": "Processing semantic embeddings"}}
     
     bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
@@ -533,22 +646,13 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     yield {"type": "progress", "data": {"step": "generation", "detail": "Synthesizing findings with AI"}}
 
     # Stream the response
-    # If we have bean data, modify the question to include context
-    rag_question = question
-    if bean_data_found:
-        rag_question = f"We successfully analyzed the bean data for: '{question}'. Now provide additional research context from scientific literature about the genetic and biological factors related to this analysis."
-    
-    for chunk in query_openai_stream(context, source_list, rag_question, conversation_history, api_key):
+    for chunk in query_openai_stream(context, source_list, question, conversation_history, api_key):
         yield {"type": "content", "data": chunk}
 
     yield {"type": "progress", "data": {"step": "genes", "detail": "Analyzing genetic elements"}}
 
-    # Get the full response for gene extraction (use same modified question as streaming)
-    rag_question = question
-    if bean_data_found:
-        rag_question = f"We successfully analyzed the bean data for: '{question}'. Now provide additional research context from scientific literature about the genetic and biological factors related to this analysis."
-    
-    full_response = query_openai(context, source_list, rag_question, conversation_history, api_key)
+    # Get the full response for gene extraction
+    full_response = query_openai(context, source_list, question, conversation_history, api_key)
     
     # Extract genes from the complete answer
     print("🧬 Extracting gene mentions...")
@@ -599,21 +703,13 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
 
     yield {"type": "progress", "data": {"step": "finalizing", "detail": "Completing analysis"}}
 
-    # Include bean data in metadata if available
-    try:
-        final_chart_data = bean_chart_data if bean_data_found else {}
-        final_full_md = bean_full_md if bean_data_found else ""
-    except:
-        final_chart_data = {}
-        final_full_md = ""
-
     yield {
         "type": "metadata",
         "data": {
             "sources": source_list,
             "genes": genes,
-            "full_markdown_table": final_full_md,
-            "chart_data": final_chart_data,
+            "full_markdown_table": "",
+            "chart_data": {},
             "suggested_questions": []
         }
     }

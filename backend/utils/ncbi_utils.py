@@ -87,8 +87,8 @@ def is_gene_in_databases(gene_name: str) -> bool:
         # Check NCBI database
         gene_db = db_manager.gene_db
         ncbi_matches = gene_db[
-            gene_db['Gene name'].str.contains(gene_name, case=False, na=False) |
-            gene_db['Gene ID'].astype(str).str.contains(gene_name, case=False, na=False) |
+            gene_db['FullGeneName'].str.contains(gene_name, case=False, na=False) |
+            gene_db['GeneID'].astype(str).str.contains(gene_name, case=False, na=False) |
             gene_db['Symbol'].str.contains(gene_name, case=False, na=False)
         ]
         
@@ -98,8 +98,8 @@ def is_gene_in_databases(gene_name: str) -> bool:
         # Check UniProt database
         uniprot_db = db_manager.uniprot_db
         uniprot_matches = uniprot_db[
-            uniprot_db['Gene names'].str.contains(gene_name, case=False, na=False) |
-            uniprot_db['Entry name'].str.contains(gene_name, case=False, na=False) |
+            uniprot_db['Gene Names'].str.contains(gene_name, case=False, na=False) |
+            uniprot_db['Entry Name'].str.contains(gene_name, case=False, na=False) |
             uniprot_db['Protein names'].str.contains(gene_name, case=False, na=False)
         ]
         
@@ -116,19 +116,19 @@ def map_to_gene_id(gene_name: str) -> Optional[str]:
         gene_db = db_manager.gene_db
         
         # Try exact match first
-        exact_match = gene_db[gene_db['Gene name'] == gene_name]
+        exact_match = gene_db[gene_db['FullGeneName'] == gene_name]
         if not exact_match.empty:
-            return str(exact_match.iloc[0]['Gene ID'])
+            return str(exact_match.iloc[0]['GeneID'])
         
         # Try case-insensitive match
-        case_match = gene_db[gene_db['Gene name'].str.lower() == gene_name.lower()]
+        case_match = gene_db[gene_db['FullGeneName'].str.lower() == gene_name.lower()]
         if not case_match.empty:
-            return str(case_match.iloc[0]['Gene ID'])
+            return str(case_match.iloc[0]['GeneID'])
         
         # Try symbol match
         symbol_match = gene_db[gene_db['Symbol'].str.lower() == gene_name.lower()]
         if not symbol_match.empty:
-            return str(symbol_match.iloc[0]['Gene ID'])
+            return str(symbol_match.iloc[0]['GeneID'])
         
         return None
         
@@ -143,9 +143,9 @@ def get_gene_summary(gene_id: str) -> Optional[str]:
         gene_db = db_manager.gene_db
         
         # Find the gene by ID
-        gene_match = gene_db[gene_db['Gene ID'].astype(str) == gene_id]
+        gene_match = gene_db[gene_db['GeneID'].astype(str) == gene_id]
         if not gene_match.empty:
-            return gene_match.iloc[0]['Summary']
+            return gene_match.iloc[0]['Description']
         
         return None
         
@@ -161,8 +161,8 @@ def get_uniprot_info(gene_name: str) -> Optional[Dict]:
         
         # Search in gene names and protein names
         matches = uniprot_db[
-            uniprot_db['Gene names'].str.contains(gene_name, case=False, na=False) |
-            uniprot_db['Entry name'].str.contains(gene_name, case=False, na=False) |
+            uniprot_db['Gene Names'].str.contains(gene_name, case=False, na=False) |
+            uniprot_db['Entry Name'].str.contains(gene_name, case=False, na=False) |
             uniprot_db['Protein names'].str.contains(gene_name, case=False, na=False)
         ]
         
@@ -170,10 +170,10 @@ def get_uniprot_info(gene_name: str) -> Optional[Dict]:
             first_match = matches.iloc[0]
             return {
                 'entry': first_match['Entry'],
-                'entry_name': first_match['Entry name'],
+                'entry_name': first_match['Entry Name'],
                 'protein_names': first_match['Protein names'],
-                'gene_names': first_match['Gene names'],
-                'organism': first_match['Organism']
+                'gene_names': first_match['Gene Names'],
+                'organism': first_match.get('Organism', 'Phaseolus vulgaris')
             }
         
         return None
