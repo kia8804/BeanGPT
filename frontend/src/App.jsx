@@ -9,6 +9,7 @@ import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
 import remarkGfm from 'remark-gfm';
 import PlotlyChart from './components/PlotlyChart.jsx';
+import config from './config.js';
 
 const initialMessages = [
   {
@@ -125,7 +126,7 @@ export default function App() {
       setIsStreaming(true);
       setStreamingText('');
 
-      const response = await fetch('http://localhost:8000/api/continue-research', {
+      const response = await fetch(`${config.API_URL}${config.API_ENDPOINTS.CONTINUE_RESEARCH}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -367,7 +368,7 @@ export default function App() {
         controller.abort();
       }, 120000); // 2 minute timeout
 
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const response = await fetch(`${config.API_URL}${config.API_ENDPOINTS.CHAT}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: beangpt-backend
+    runtime: python3
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHONPATH
+        value: ./backend
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: BGE_MODEL
+        value: "BAAI/bge-base-en-v1.5"
+      - key: PUBMEDBERT_MODEL
+        value: "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
+      - key: BGE_INDEX_NAME
+        value: "dry-bean-bge-abstract"
+      - key: PUBMEDBERT_INDEX_NAME
+        value: "dry-bean-pubmedbert-abstract"
+      - key: TOP_K
+        value: "8"
+      - key: ALPHA
+        value: "0.6"
+      - key: GENE_DB_PATH
+        value: "./data/NCBI_Filtered_Data_Enriched.xlsx"
+      - key: UNIPROT_DB_PATH
+        value: "./data/uniprotkb_Phaseolus_vulgaris.xlsx"
+      - key: RAG_FILE
+        value: "./data/summaries.jsonl"
+      - key: MERGED_DATA_PATH
+        value: "./data/Merged_Bean_Dataset.xlsx"
+      - key: CORS_ORIGINS
+        value: "https://yourusername.github.io"
+      - key: API_PREFIX
+        value: "/api"
+    healthCheckPath: "/api/ping" 

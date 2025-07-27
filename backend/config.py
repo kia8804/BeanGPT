@@ -38,8 +38,14 @@ class Settings:
         self.merged_data_path = os.getenv("MERGED_DATA_PATH", "../data/Merged_Bean_Dataset.xlsx")
         
         # API Configuration
-        self.cors_origins = self._parse_list(os.getenv("CORS_ORIGINS", "http://localhost:5173"))
+        # Support both development and production CORS origins
+        default_cors = "http://localhost:5173,https://yourusername.github.io"
+        self.cors_origins = self._parse_list(os.getenv("CORS_ORIGINS", default_cors))
         self.api_prefix = os.getenv("API_PREFIX", "/api")
+        
+        # Environment detection
+        self.environment = os.getenv("ENVIRONMENT", "development")
+        self.is_production = self.environment.lower() == "production"
     
     def _get_required_env(self, key: str) -> str:
         """Get a required environment variable or raise an error."""
