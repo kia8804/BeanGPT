@@ -26,12 +26,28 @@ load_dotenv()
 # Initialize Pinecone
 pc = Pinecone(api_key=settings.pinecone_api_key)
 
-# --- Load Models ---
-bge_model = SentenceTransformer(settings.bge_model)
-tokenizer = AutoTokenizer.from_pretrained(settings.pubmedbert_model)
-pub_model = AutoModel.from_pretrained(settings.pubmedbert_model)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-pub_model.to(device).eval()
+# --- Lazy Model Loading ---
+_bge_model = None
+_tokenizer = None
+_pub_model = None
+_device = None
+
+def get_bge_model():
+    global _bge_model
+    if _bge_model is None:
+        print("Loading BGE model...")
+        _bge_model = SentenceTransformer(settings.bge_model)
+    return _bge_model
+
+def get_pubmedbert_models():
+    global _tokenizer, _pub_model, _device
+    if _tokenizer is None:
+        print("Loading PubMedBERT models...")
+        _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        _tokenizer = AutoTokenizer.from_pretrained(settings.pubmedbert_model)
+        _pub_model = AutoModel.from_pretrained(settings.pubmedbert_model)
+        _pub_model.to(_device).eval()
+    return _tokenizer, _pub_model, _device
 
 # --- RAG Context Loading ---
 def load_rag_text_jsonl(path: Path) -> Dict[str, str]:
@@ -75,6 +91,7 @@ def mean_pooling(last_hidden_state, attention_mask):
     return (last_hidden_state * mask).sum(1) / mask.sum(1)
 
 def embed_query_pubmedbert(query: str) -> List[float]:
+    tokenizer, pub_model, device = get_pubmedbert_models()
     encoded = tokenizer(
         query, return_tensors="pt", padding=True, truncation=True, max_length=512
     )
@@ -363,7 +380,7 @@ def continue_with_research_stream(question: str, conversation_history: List[Dict
     
     yield {"type": "progress", "data": {"step": "embeddings", "detail": "Processing semantic embeddings"}}
     
-    bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
+    bge_vec = get_bge_model().encode(question, normalize_embeddings=True).tolist()
     pub_vec = embed_query_pubmedbert(question)
     
     yield {"type": "progress", "data": {"step": "search", "detail": "Searching literature database"}}
@@ -622,7 +639,7 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     # --- Continue with research literature search for all non-bean-data cases ---
     yield {"type": "progress", "data": {"step": "embeddings", "detail": "Processing semantic embeddings"}}
     
-    bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
+    bge_vec = get_bge_model().encode(question, normalize_embeddings=True).tolist()
     pub_vec = embed_query_pubmedbert(question)
     
     yield {"type": "progress", "data": {"step": "search", "detail": "Searching literature database"}}
@@ -791,7 +808,7 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
 
     # --- RAG pipeline for research papers ---
     print("🔬 Proceeding with research paper search...")
-    bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
+    bge_vec = get_bge_model().encode(question, normalize_embeddings=True).tolist()
     pub_vec = embed_query_pubmedbert(question)
     
     print("🔎 Querying Pinecone...")

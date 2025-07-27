@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     buildCommand: "pip install --only-binary=all -r backend/requirements.txt"
-    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1"
     envVars:
       - key: PYTHONPATH
         value: ./backend
@@ -36,4 +36,8 @@ services:
         value: "https://kia8804.github.io"
       - key: API_PREFIX
         value: "/api"
+      - key: PYTORCH_CUDA_ALLOC_CONF
+        value: "max_split_size_mb:128"
+      - key: TOKENIZERS_PARALLELISM
+        value: "false"
     healthCheckPath: "/api/ping" 
