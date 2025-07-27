@@ -3,7 +3,6 @@ services:
     name: beangpt-backend
     runtime: python
     buildCommand: "pip install -r backend/requirements.txt"
-    pythonVersion: "3.11"
     startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHONPATH
@@ -33,7 +32,7 @@ services:
       - key: MERGED_DATA_PATH
         value: "./data/Merged_Bean_Dataset.xlsx"
       - key: CORS_ORIGINS
-        value: "https://yourusername.github.io"
+        value: "https://kia8804.github.io"
       - key: API_PREFIX
         value: "/api"
     healthCheckPath: "/api/ping" 

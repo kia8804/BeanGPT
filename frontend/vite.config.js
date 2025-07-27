@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
   // Set base path for GitHub Pages deployment
-  base: mode === 'production' ? '/GuelphResearchCursor/' : '/',
+  base: mode === 'production' ? '/BeanGPT/' : '/',
   build: {
     outDir: 'dist',
     sourcemap: mode !== 'production',
