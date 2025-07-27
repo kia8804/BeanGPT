@@ -6,7 +6,7 @@ openai==0.28.1
 pinecone-client==4.1.2
 sentence-transformers==2.5.1
 transformers==4.37.2
-torch==2.2.0
+torch==2.5.0
 pandas==2.2.0
 openpyxl==3.1.2
 orjson==3.9.10
