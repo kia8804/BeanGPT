@@ -9,6 +9,7 @@ import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
 import remarkGfm from 'remark-gfm';
 import PlotlyChart from './components/PlotlyChart.jsx';
+import ApiKeyInput from './components/ApiKeyInput.jsx';
 
 const initialMessages = [
   {
@@ -67,6 +68,12 @@ export default function App() {
   const chatEndRef = useRef(null);
   const [showSuggestedQuestions, setShowSuggestedQuestions] = useState({});
   const [showGenePanel, setShowGenePanel] = useState({});
+  const [userApiKey, setUserApiKey] = useState('');
+
+  // Handle API key changes from the ApiKeyInput component
+  const handleApiKeyChange = (apiKey) => {
+    setUserApiKey(apiKey);
+  };
 
   // Custom styles for better prose formatting
   useEffect(() => {
@@ -116,6 +123,12 @@ export default function App() {
 
   // Handle research continuation when user clicks the toggle
   const handleContinueResearch = async (originalQuestion, messageIndex) => {
+    // Check if API key is available
+    if (!userApiKey) {
+      console.error('No API key available for research continuation');
+      return;
+    }
+    
     try {
       // Capture the current message content before starting
       const currentMessage = messages[messageIndex];
@@ -132,7 +145,8 @@ export default function App() {
         },
         body: JSON.stringify({
           question: originalQuestion,
-          conversation_history: getConversationHistory()
+          conversation_history: getConversationHistory(),
+          api_key: userApiKey
         })
       });
 
@@ -374,7 +388,8 @@ export default function App() {
         },
         body: JSON.stringify({
           question: userMsgText,
-          conversation_history: getConversationHistory()
+          conversation_history: getConversationHistory(),
+          api_key: userApiKey
         }),
         signal: controller.signal
       });
@@ -795,25 +810,34 @@ export default function App() {
         {/* Header */}
         <div className={`flex-shrink-0 p-6 border-b ${darkMode ? 'border-slate-800 bg-slate-900/50' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Main Platform</h2>
-              <p className="text-gray-600 dark:text-slate-400 text-sm mt-1">
-                Dry Bean Breeding & Computational Biology
-              </p>
+            <div className="flex items-center space-x-8">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Main Platform</h2>
+                <p className="text-gray-600 dark:text-slate-400 text-sm mt-1">
+                  Dry Bean Breeding & Computational Biology
+                </p>
+              </div>
+              
+              {/* API Key Input - Compact in Header */}
+              <ApiKeyInput 
+                darkMode={darkMode} 
+                onApiKeyChange={handleApiKeyChange}
+              />
             </div>
+            
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-slate-400">
                 <div className={`w-2 h-2 rounded-full ${
                   isLoading ? 'bg-yellow-400 animate-pulse' : 
                   isStreaming ? 'bg-green-400 animate-pulse' : 
                   isPostProcessing ? 'bg-blue-400 animate-pulse' : 
-                  'bg-green-400'
+                  userApiKey ? 'bg-green-400' : 'bg-red-400'
                 }`}></div>
                 <span>{
                   isLoading ? 'Processing' : 
                   isStreaming ? 'Generating' : 
                   isPostProcessing ? 'Analyzing' : 
-                  'Ready'
+                  userApiKey ? 'Ready' : 'API Key Required'
                 }</span>
               </div>
             </div>
@@ -1167,7 +1191,7 @@ export default function App() {
                             <div className="flex space-x-3">
                               <button
                                 onClick={() => handleContinueResearch(msg.originalQuestion || "Continue research", idx)}
-                                disabled={isLoading || isStreaming}
+                                disabled={isLoading || isStreaming || !userApiKey}
                                 className={`px-6 py-3 rounded-lg font-medium transition-all text-sm ${
                                   darkMode
                                     ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'
@@ -1192,7 +1216,7 @@ export default function App() {
                                     i === idx ? { ...m, showResearchToggle: false } : m
                                   ));
                                 }}
-                                disabled={isLoading || isStreaming}
+                                disabled={isLoading || isStreaming || !userApiKey}
                                 className={`px-4 py-3 rounded-lg font-medium transition-all text-sm ${
                                   darkMode
                                     ? 'bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-50'
@@ -1451,14 +1475,14 @@ export default function App() {
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask about gene functions, cultivar performance, or request data analysis..."
-                  disabled={isLoading || isStreaming}
+                  placeholder={userApiKey ? "Ask about gene functions, cultivar performance, or request data analysis..." : "Please enter your OpenAI API key above to start asking questions..."}
+                  disabled={isLoading || isStreaming || !userApiKey}
                   rows={1}
                   className={`w-full p-4 rounded-xl border resize-none transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     darkMode 
                       ? 'bg-slate-800 border-slate-700 text-slate-100 placeholder-slate-400' 
                       : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                  } ${isLoading || isStreaming ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  } ${isLoading || isStreaming || !userApiKey ? 'opacity-50 cursor-not-allowed' : ''}`}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -1469,7 +1493,7 @@ export default function App() {
               </div>
               <button
                 type="submit"
-                disabled={isLoading || isStreaming || !input.trim()}
+                disabled={isLoading || isStreaming || !input.trim() || !userApiKey}
                 className="p-4 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
               >
                 <FaPaperPlane className="text-lg" />

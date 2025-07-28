@@ -11,6 +11,7 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     question: str
     conversation_history: Optional[List[Dict[str, Any]]] = None
+    api_key: Optional[str] = None
 
 class ChatResponse(BaseModel):
     answer: str
@@ -22,10 +23,15 @@ class ChatResponse(BaseModel):
 @router.post("/chat")
 async def chat_endpoint(request: ChatRequest):
     def generate():
-        # Get API key from environment
-        api_key = os.getenv("OPENAI_API_KEY")
+        # Require user-provided API key - no fallback to environment
+        api_key = request.api_key
         if not api_key:
-            yield f"data: {json.dumps({'type': 'error', 'data': 'OpenAI API key not configured'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'data': 'Please enter your OpenAI API key in the interface above to continue.'})}\n\n"
+            return
+        
+        # Validate API key format
+        if not api_key.startswith('sk-') or len(api_key) < 20:
+            yield f"data: {json.dumps({'type': 'error', 'data': 'Invalid API key format. Please enter a valid OpenAI API key.'})}\n\n"
             return
         
         # Stream the answer
@@ -55,10 +61,15 @@ async def chat_endpoint(request: ChatRequest):
 @router.post("/continue-research")
 async def continue_research_endpoint(request: ChatRequest):
     def generate():
-        # Get API key from environment
-        api_key = os.getenv("OPENAI_API_KEY")
+        # Require user-provided API key - no fallback to environment
+        api_key = request.api_key
         if not api_key:
-            yield f"data: {json.dumps({'type': 'error', 'data': 'OpenAI API key not configured'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'data': 'Please enter your OpenAI API key in the interface above to continue.'})}\n\n"
+            return
+        
+        # Validate API key format
+        if not api_key.startswith('sk-') or len(api_key) < 20:
+            yield f"data: {json.dumps({'type': 'error', 'data': 'Invalid API key format. Please enter a valid OpenAI API key.'})}\n\n"
             return
         
         # Stream the research continuation
