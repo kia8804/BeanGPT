@@ -69,10 +69,25 @@ export default function App() {
   const [showSuggestedQuestions, setShowSuggestedQuestions] = useState({});
   const [showGenePanel, setShowGenePanel] = useState({});
   const [userApiKey, setUserApiKey] = useState('');
+  const [apiKeyStatus, setApiKeyStatus] = useState('none'); // 'none', 'valid', 'invalid'
 
   // Handle API key changes from the ApiKeyInput component
   const handleApiKeyChange = (apiKey) => {
     setUserApiKey(apiKey);
+    if (apiKey) {
+      setApiKeyStatus('valid');
+    } else {
+      setApiKeyStatus('none');
+    }
+  };
+
+  // Handle API key validation errors
+  const handleApiKeyError = () => {
+    setApiKeyStatus('invalid');
+    setUserApiKey('');
+    if (window.handleApiKeyError) {
+      window.handleApiKeyError();
+    }
   };
 
   // Custom styles for better prose formatting
@@ -123,9 +138,9 @@ export default function App() {
 
   // Handle research continuation when user clicks the toggle
   const handleContinueResearch = async (originalQuestion, messageIndex) => {
-    // Check if API key is available
-    if (!userApiKey) {
-      console.error('No API key available for research continuation');
+    // Check if API key is available and valid
+    if (apiKeyStatus !== 'valid') {
+      console.error('No valid API key available for research continuation');
       return;
     }
     
@@ -183,6 +198,35 @@ export default function App() {
                   setIsLoading(false);
                   researchText += data.data;
                   setStreamingText(researchText);
+                } else if (data.type === 'error') {
+                  // Handle API key errors and other errors
+                  setIsLoading(false);
+                  setIsStreaming(false);
+                  setStreamingText('');
+                  
+                  if (data.data && (data.data.includes('API key') || data.data.includes('Invalid API key'))) {
+                    handleApiKeyError();
+                  }
+                  
+                  // Show error message
+                  setMessages(prev => prev.map((msg, idx) => {
+                    if (idx === messageIndex) {
+                      return {
+                        ...msg,
+                        text: originalMessageContent,
+                        showResearchToggle: false
+                      };
+                    }
+                    return msg;
+                  }));
+                  
+                  // Add error message
+                  setMessages(prev => [...prev, {
+                    sender: 'assistant',
+                    text: `❌ **Error**: ${data.data}`,
+                    timestamp: new Date()
+                  }]);
+                  break;
                 } else if (data.type === 'metadata') {
                   setIsStreaming(false);
                   
@@ -501,6 +545,23 @@ export default function App() {
                     const finalStepIndex = currentSteps.findIndex(step => step.step.includes('Finalizing') || step.step.includes('output'));
                     if (finalStepIndex >= 0) setCurrentStep(finalStepIndex);
                   }
+                } else if (data.type === 'error') {
+                  // Handle API key errors and other errors
+                  setIsLoading(false);
+                  setIsStreaming(false);
+                  setIsPostProcessing(false);
+                  
+                  if (data.data && (data.data.includes('API key') || data.data.includes('Invalid API key'))) {
+                    handleApiKeyError();
+                  }
+                  
+                  // Add error message
+                  setMessages(prev => [...prev, {
+                    sender: 'assistant',
+                    text: `❌ **Error**: ${data.data}`,
+                    timestamp: new Date()
+                  }]);
+                  break;
                 } else if (data.type === 'bean_complete') {
                   // Bean data analysis is complete, show toggle for research continuation
                   setIsLoading(false);
@@ -810,34 +871,36 @@ export default function App() {
         {/* Header */}
         <div className={`flex-shrink-0 p-6 border-b ${darkMode ? 'border-slate-800 bg-slate-900/50' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-8">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Main Platform</h2>
-                <p className="text-gray-600 dark:text-slate-400 text-sm mt-1">
-                  Dry Bean Breeding & Computational Biology
-                </p>
-              </div>
-              
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Main Platform</h2>
+              <p className="text-gray-600 dark:text-slate-400 text-sm mt-1">
+                Dry Bean Breeding & Computational Biology
+              </p>
+            </div>
+            
+            <div className="flex items-center space-x-6">
               {/* API Key Input - Compact in Header */}
               <ApiKeyInput 
                 darkMode={darkMode} 
                 onApiKeyChange={handleApiKeyChange}
               />
-            </div>
-            
-            <div className="flex items-center space-x-4">
+              
               <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-slate-400">
                 <div className={`w-2 h-2 rounded-full ${
                   isLoading ? 'bg-yellow-400 animate-pulse' : 
                   isStreaming ? 'bg-green-400 animate-pulse' : 
                   isPostProcessing ? 'bg-blue-400 animate-pulse' : 
-                  userApiKey ? 'bg-green-400' : 'bg-red-400'
+                  apiKeyStatus === 'valid' ? 'bg-green-400' : 
+                  apiKeyStatus === 'invalid' ? 'bg-red-400 animate-pulse' : 
+                  'bg-red-400'
                 }`}></div>
                 <span>{
                   isLoading ? 'Processing' : 
                   isStreaming ? 'Generating' : 
                   isPostProcessing ? 'Analyzing' : 
-                  userApiKey ? 'Ready' : 'API Key Required'
+                  apiKeyStatus === 'valid' ? 'Ready' : 
+                  apiKeyStatus === 'invalid' ? 'Invalid API Key' : 
+                  'API Key Required'
                 }</span>
               </div>
             </div>
@@ -1191,7 +1254,7 @@ export default function App() {
                             <div className="flex space-x-3">
                               <button
                                 onClick={() => handleContinueResearch(msg.originalQuestion || "Continue research", idx)}
-                                disabled={isLoading || isStreaming || !userApiKey}
+                                disabled={isLoading || isStreaming || apiKeyStatus !== 'valid'}
                                 className={`px-6 py-3 rounded-lg font-medium transition-all text-sm ${
                                   darkMode
                                     ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50'
@@ -1216,7 +1279,7 @@ export default function App() {
                                     i === idx ? { ...m, showResearchToggle: false } : m
                                   ));
                                 }}
-                                disabled={isLoading || isStreaming || !userApiKey}
+                                disabled={isLoading || isStreaming || apiKeyStatus !== 'valid'}
                                 className={`px-4 py-3 rounded-lg font-medium transition-all text-sm ${
                                   darkMode
                                     ? 'bg-slate-700 hover:bg-slate-600 text-slate-300 disabled:opacity-50'
@@ -1475,14 +1538,14 @@ export default function App() {
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder={userApiKey ? "Ask about gene functions, cultivar performance, or request data analysis..." : "Please enter your OpenAI API key above to start asking questions..."}
-                  disabled={isLoading || isStreaming || !userApiKey}
+                  placeholder={apiKeyStatus === 'valid' ? "Ask about gene functions, cultivar performance, or request data analysis..." : "Please enter your OpenAI API key above to start asking questions..."}
+                  disabled={isLoading || isStreaming || apiKeyStatus !== 'valid'}
                   rows={1}
                   className={`w-full p-4 rounded-xl border resize-none transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     darkMode 
                       ? 'bg-slate-800 border-slate-700 text-slate-100 placeholder-slate-400' 
                       : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                  } ${isLoading || isStreaming || !userApiKey ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  } ${isLoading || isStreaming || apiKeyStatus !== 'valid' ? 'opacity-50 cursor-not-allowed' : ''}`}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -1493,7 +1556,7 @@ export default function App() {
               </div>
               <button
                 type="submit"
-                disabled={isLoading || isStreaming || !input.trim() || !userApiKey}
+                disabled={isLoading || isStreaming || !input.trim() || apiKeyStatus !== 'valid'}
                 className="p-4 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
               >
                 <FaPaperPlane className="text-lg" />

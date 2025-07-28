@@ -1,26 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import { FaKey, FaEye, FaEyeSlash, FaCheck, FaExclamationTriangle, FaCog, FaShieldAlt, FaLock, FaPlus } from 'react-icons/fa';
+import { FaKey, FaEye, FaEyeSlash, FaCheck, FaExclamationTriangle, FaCog, FaShieldAlt, FaLock, FaPlus, FaTimes } from 'react-icons/fa';
 
 const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
   const [apiKey, setApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [isValid, setIsValid] = useState(false);
+  const [isValidFormat, setIsValidFormat] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [keyStatus, setKeyStatus] = useState('none'); // 'none', 'valid', 'invalid_format', 'invalid_key'
 
   // Load API key from localStorage on component mount
   useEffect(() => {
     const savedApiKey = localStorage.getItem('openai_api_key');
     if (savedApiKey) {
       setApiKey(savedApiKey);
-      setIsValid(validateApiKey(savedApiKey));
-      setIsSaved(true);
-      onApiKeyChange(savedApiKey);
+      const validFormat = validateApiKeyFormat(savedApiKey);
+      setIsValidFormat(validFormat);
+      if (validFormat) {
+        setIsSaved(true);
+        setKeyStatus('valid');
+        onApiKeyChange(savedApiKey);
+      } else {
+        setKeyStatus('invalid_format');
+      }
+    } else {
+      setKeyStatus('none');
     }
   }, [onApiKeyChange]);
 
   // Validate OpenAI API key format
-  const validateApiKey = (key) => {
+  const validateApiKeyFormat = (key) => {
     return key.startsWith('sk-') && key.length >= 20;
   };
 
@@ -28,25 +37,49 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
   const handleApiKeyChange = (e) => {
     const value = e.target.value.trim();
     setApiKey(value);
-    const valid = validateApiKey(value);
-    setIsValid(valid);
+    const validFormat = validateApiKeyFormat(value);
+    setIsValidFormat(validFormat);
     
-    if (valid) {
+    if (validFormat) {
       localStorage.setItem('openai_api_key', value);
       setIsSaved(true);
+      setKeyStatus('valid');
       onApiKeyChange(value);
+    } else if (value.length > 0) {
+      setIsSaved(false);
+      setKeyStatus('invalid_format');
+      onApiKeyChange('');
     } else {
       setIsSaved(false);
+      setKeyStatus('none');
       onApiKeyChange('');
     }
   };
 
+  // Handle API key validation errors from backend
+  const handleApiKeyError = () => {
+    setKeyStatus('invalid_key');
+    setIsSaved(false);
+    // Don't clear the key, just mark it as invalid
+    onApiKeyChange('');
+  };
+
+  // Expose error handler to parent
+  useEffect(() => {
+    // Store the error handler reference so parent can call it
+    window.handleApiKeyError = handleApiKeyError;
+    return () => {
+      delete window.handleApiKeyError;
+    };
+  }, []);
+
   // Clear API key
   const clearApiKey = () => {
     setApiKey('');
-    setIsValid(false);
+    setIsValidFormat(false);
     setIsSaved(false);
     setIsExpanded(false);
+    setKeyStatus('none');
     localStorage.removeItem('openai_api_key');
     onApiKeyChange('');
   };
@@ -56,18 +89,52 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
     setIsExpanded(!isExpanded);
   };
 
+  // Get status display info
+  const getStatusInfo = () => {
+    switch (keyStatus) {
+      case 'valid':
+        return {
+          text: 'API Key Ready',
+          icon: FaShieldAlt,
+          color: 'text-green-600 dark:text-green-400',
+          bgColor: 'bg-gradient-to-r from-green-500 to-emerald-600',
+          dotColor: 'bg-green-400'
+        };
+      case 'invalid_format':
+        return {
+          text: 'Invalid Format',
+          icon: FaExclamationTriangle,
+          color: 'text-red-600 dark:text-red-400',
+          bgColor: 'bg-gradient-to-r from-red-500 to-red-600',
+          dotColor: 'bg-red-400'
+        };
+      case 'invalid_key':
+        return {
+          text: 'Invalid API Key',
+          icon: FaTimes,
+          color: 'text-red-600 dark:text-red-400',
+          bgColor: 'bg-gradient-to-r from-red-500 to-red-600',
+          dotColor: 'bg-red-400'
+        };
+      default:
+        return null;
+    }
+  };
+
+  const statusInfo = getStatusInfo();
+
   return (
     <div className="flex items-center space-x-4">
       {/* Compact Status/Input Toggle */}
-      {isSaved && !isExpanded ? (
+      {statusInfo && !isExpanded ? (
         // Saved state - compact indicator
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-2">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-r from-green-500 to-emerald-600 flex items-center justify-center">
-              <FaShieldAlt className="text-white text-xs" />
+            <div className={`w-6 h-6 rounded-full ${statusInfo.bgColor} flex items-center justify-center`}>
+              <statusInfo.icon className="text-white text-xs" />
             </div>
-            <span className="text-sm font-medium text-green-600 dark:text-green-400">
-              API Key Ready
+            <span className={`text-sm font-medium ${statusInfo.color}`}>
+              {statusInfo.text}
             </span>
           </div>
           <button
@@ -107,8 +174,10 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
                     placeholder="sk-..."
                     className={`w-64 px-3 py-1.5 text-sm border rounded-lg bg-transparent font-mono transition-all focus:outline-none focus:ring-2 ${
                       apiKey
-                        ? isValid
-                          ? 'border-green-500 focus:ring-green-500/30'
+                        ? isValidFormat
+                          ? keyStatus === 'valid'
+                            ? 'border-green-500 focus:ring-green-500/30'
+                            : 'border-yellow-500 focus:ring-yellow-500/30'
                           : 'border-red-500 focus:ring-red-500/30'
                         : 'border-gray-300 dark:border-slate-500 focus:ring-blue-500/30'
                     }`}
@@ -123,8 +192,12 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
                     </button>
                     {apiKey && (
                       <div className="ml-1">
-                        {isValid ? (
+                        {keyStatus === 'valid' ? (
                           <FaCheck className="text-green-500 text-xs" />
+                        ) : keyStatus === 'invalid_key' ? (
+                          <FaTimes className="text-red-500 text-xs" />
+                        ) : isValidFormat ? (
+                          <FaCheck className="text-yellow-500 text-xs" />
                         ) : (
                           <FaExclamationTriangle className="text-red-500 text-xs" />
                         )}
@@ -134,7 +207,7 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
                 </div>
               </div>
               
-              {isSaved && (
+              {(isSaved || keyStatus !== 'none') && (
                 <button
                   onClick={clearApiKey}
                   className="px-3 py-1.5 text-xs rounded-lg bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/30 transition-colors"
@@ -155,7 +228,7 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
       )}
 
       {/* Status indicator for no API key */}
-      {!isSaved && !isExpanded && (
+      {keyStatus === 'none' && !isExpanded && (
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 rounded-full bg-red-400 animate-pulse"></div>
           <span className="text-xs text-red-600 dark:text-red-400 font-medium">
@@ -165,7 +238,7 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
       )}
       
       {/* Get API Key Link - only show when expanded and no key */}
-      {isExpanded && !isSaved && (
+      {isExpanded && keyStatus === 'none' && (
         <a 
           href="https://platform.openai.com/api-keys" 
           target="_blank" 
