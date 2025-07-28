@@ -33,6 +33,54 @@ pub_model = AutoModel.from_pretrained(settings.pubmedbert_model)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pub_model.to(device).eval()
 
+# --- Gene Processing Functions ---
+def process_genes_batch(gene_mentions: List[str]) -> List[Dict[str, Any]]:
+    """Batch process genes for better performance by avoiding individual lookups."""
+    print(f"🧬 Batch processing {len(gene_mentions)} genes...")
+    
+    gene_summaries = []
+    
+    for gene in gene_mentions:
+        # Try to get gene ID from NCBI database using fast lookup
+        gene_id = map_to_gene_id(gene)
+        if gene_id:
+            # Get summary from NCBI database using fast lookup
+            from utils.ncbi_utils import get_gene_summary
+            gene_summary = get_gene_summary(gene_id)
+            preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_id}"
+            gene_summaries.append({
+                "name": gene,
+                "summary": f"**NCBI Gene Database**\n\n{gene_summary or f'Gene ID: {gene_id}'}",
+                "link": preview_url,
+                "source": "NCBI Gene Database",
+                "description": gene_summary or f"Gene ID: {gene_id}"
+            })
+        else:
+            # Try to get UniProt information using fast lookup
+            from utils.ncbi_utils import get_uniprot_info
+            uniprot_info = get_uniprot_info(gene)
+            if uniprot_info:
+                preview_url = f"https://www.uniprot.org/uniprotkb/{uniprot_info['entry']}"
+                gene_summaries.append({
+                    "name": gene,
+                    "summary": f"**UniProt Protein Database**\n\n{uniprot_info['protein_names'] or ('UniProt Entry: ' + uniprot_info['entry'])}",
+                    "link": preview_url,
+                    "source": "UniProt Protein Database",
+                    "description": uniprot_info['protein_names'] or f"UniProt Entry: {uniprot_info['entry']}"
+                })
+            else:
+                # Gene not found in databases, add basic info
+                gene_summaries.append({
+                    "name": gene,
+                    "summary": f"**Literature Mention**\n\nGene identifier: {gene}\nSource: Literature mention",
+                    "source": "Literature Mention",
+                    "description": f"Gene mentioned in research literature: {gene}",
+                    "not_found": True
+                })
+    
+    print(f"✅ Batch processed {len(gene_summaries)} genes")
+    return gene_summaries
+
 # --- RAG Context Loading ---
 def load_rag_text_jsonl(path: Path) -> Dict[str, str]:
     rag_lookup = {}
@@ -403,47 +451,8 @@ def continue_with_research_stream(question: str, conversation_history: List[Dict
     gene_mentions, db_hits, gpt_hits = extract_gene_mentions(full_response)
     print(f"Found gene mentions: {gene_mentions}")
 
-    # Map genes to their summaries with preview URLs
-    gene_summaries = []
-    for gene in gene_mentions:
-        # Try to get gene ID from NCBI database
-        gene_id = map_to_gene_id(gene)
-        if gene_id:
-            # Get summary from NCBI database
-            from utils.ncbi_utils import get_gene_summary
-            gene_summary = get_gene_summary(gene_id)
-            preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_id}"
-            gene_summaries.append({
-                "name": gene,
-                "summary": f"![NCBI Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
-                "link": preview_url,
-                "source": "NCBI Gene Database",
-                "description": gene_summary or f"Gene ID: {gene_id}"
-            })
-        else:
-            # Try to get UniProt information
-            from utils.ncbi_utils import get_uniprot_info
-            uniprot_info = get_uniprot_info(gene)
-            if uniprot_info:
-                preview_url = f"https://www.uniprot.org/uniprotkb/{uniprot_info['entry']}"
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"![UniProt Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
-                    "link": preview_url,
-                    "source": "UniProt Protein Database",
-                    "description": uniprot_info['protein_names'] or f"UniProt Entry: {uniprot_info['entry']}"
-                })
-            else:
-                # Gene not found in databases, add basic info
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"- Gene identifier: {gene}\n- Source: Literature mention",
-                    "source": "Literature Mention",
-                    "description": f"Gene mentioned in research literature: {gene}",
-                    "not_found": True
-                })
-
-    genes = gene_summaries
+    # Batch process genes for better performance
+    genes = process_genes_batch(gene_mentions)
 
     yield {"type": "progress", "data": {"step": "finalizing", "detail": "Completing analysis"}}
 
@@ -659,47 +668,8 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     gene_mentions, db_hits, gpt_hits = extract_gene_mentions(full_response)
     print(f"Found gene mentions: {gene_mentions}")
 
-    # Map genes to their summaries with preview URLs
-    gene_summaries = []
-    for gene in gene_mentions:
-        # Try to get gene ID from NCBI database
-        gene_id = map_to_gene_id(gene)
-        if gene_id:
-            # Get summary from NCBI database
-            from utils.ncbi_utils import get_gene_summary
-            gene_summary = get_gene_summary(gene_id)
-            preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_id}"
-            gene_summaries.append({
-                "name": gene,
-                "summary": f"![NCBI Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
-                "link": preview_url,
-                "source": "NCBI Gene Database",
-                "description": gene_summary or f"Gene ID: {gene_id}"
-            })
-        else:
-            # Try to get UniProt information
-            from utils.ncbi_utils import get_uniprot_info
-            uniprot_info = get_uniprot_info(gene)
-            if uniprot_info:
-                preview_url = f"https://www.uniprot.org/uniprotkb/{uniprot_info['entry']}"
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"![UniProt Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
-                    "link": preview_url,
-                    "source": "UniProt Protein Database",
-                    "description": uniprot_info['protein_names'] or f"UniProt Entry: {uniprot_info['entry']}"
-                })
-            else:
-                # Gene not found in databases, add basic info
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"- Gene identifier: {gene}\n- Source: Literature mention",
-                    "source": "Literature Mention",
-                    "description": f"Gene mentioned in research literature: {gene}",
-                    "not_found": True
-                })
-
-    genes = gene_summaries
+    # Batch process genes for better performance
+    gene_summaries = process_genes_batch(gene_mentions)
 
     yield {"type": "progress", "data": {"step": "finalizing", "detail": "Completing analysis"}}
 
@@ -707,7 +677,7 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
         "type": "metadata",
         "data": {
             "sources": source_list,
-            "genes": genes,
+            "genes": gene_summaries,
             "full_markdown_table": "",
             "chart_data": {},
             "suggested_questions": []
@@ -824,45 +794,8 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     gene_mentions, db_hits, gpt_hits = extract_gene_mentions(final_answer)
     print(f"Found gene mentions: {gene_mentions}")
 
-    # Map genes to their summaries with preview URLs
-    gene_summaries = []
-    for gene in gene_mentions:
-        # Try to get gene ID from NCBI database
-        gene_id = map_to_gene_id(gene)
-        if gene_id:
-            # Get summary from NCBI database
-            from utils.ncbi_utils import get_gene_summary
-            gene_summary = get_gene_summary(gene_id)
-            preview_url = f"https://www.ncbi.nlm.nih.gov/gene/{gene_id}"
-            gene_summaries.append({
-                "name": gene,
-                "summary": f"![NCBI Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
-                "link": preview_url,
-                "source": "NCBI Gene Database",
-                "description": gene_summary or f"Gene ID: {gene_id}"
-            })
-        else:
-            # Try to get UniProt information
-            from utils.ncbi_utils import get_uniprot_info
-            uniprot_info = get_uniprot_info(gene)
-            if uniprot_info:
-                preview_url = f"https://www.uniprot.org/uniprotkb/{uniprot_info['entry']}"
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"![UniProt Preview](https://api.screenshotmachine.com/?key=demo&url={preview_url}&dimension=400x300)",
-                    "link": preview_url,
-                    "source": "UniProt Protein Database",
-                    "description": uniprot_info['protein_names'] or f"UniProt Entry: {uniprot_info['entry']}"
-                })
-            else:
-                # Gene not found in databases, add basic info
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"- Gene identifier: {gene}\n- Source: Literature mention",
-                    "source": "Literature Mention",
-                    "description": f"Gene mentioned in research literature: {gene}",
-                    "not_found": True
-                })
+    # Batch process genes for better performance
+    gene_summaries = process_genes_batch(gene_mentions)
 
     print(f"✅ Gene extraction completed. Found {len(gene_summaries)} genes.")
     return final_answer, confirmed_dois, gene_summaries, "" 

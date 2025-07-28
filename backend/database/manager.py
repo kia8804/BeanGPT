@@ -9,6 +9,7 @@ import json
 import orjson
 from config import settings
 from exceptions import DatabaseError
+import os
 
 
 class DatabaseManager:
@@ -19,6 +20,13 @@ class DatabaseManager:
         self._uniprot_db: Optional[pd.DataFrame] = None
         self._bean_data: Optional[pd.DataFrame] = None
         self._rag_lookup: Optional[Dict[str, str]] = None
+        
+        # Efficient lookup indices for gene operations
+        self._gene_id_lookup: Optional[Dict[str, str]] = None  # gene_name -> gene_id
+        self._gene_summary_lookup: Optional[Dict[str, str]] = None  # gene_id -> summary
+        self._gene_symbol_lookup: Optional[Dict[str, str]] = None  # symbol -> gene_id
+        self._uniprot_lookup: Optional[Dict[str, Dict]] = None  # gene_name -> uniprot_info
+        self._gene_existence_cache: Optional[set] = None  # set of all known gene names
     
     @property
     def gene_db(self) -> pd.DataFrame:
@@ -48,30 +56,159 @@ class DatabaseManager:
             self._load_rag_lookup()
         return self._rag_lookup
     
+    def _build_gene_indices(self) -> None:
+        """Build efficient lookup indices for gene operations."""
+        if self._gene_id_lookup is not None:
+            return  # Already built
+            
+        print("🔨 Building gene lookup indices...")
+        
+        # Initialize lookup dictionaries
+        self._gene_id_lookup = {}
+        self._gene_summary_lookup = {}
+        self._gene_symbol_lookup = {}
+        self._gene_existence_cache = set()
+        
+        # Build NCBI gene indices
+        for _, row in self.gene_db.iterrows():
+            gene_id = str(row['GeneID'])
+            full_name = str(row['FullGeneName']).strip()
+            symbol = str(row['Symbol']).strip()
+            description = str(row['Description']).strip()
+            
+            # Build lookups (case-insensitive)
+            if full_name and full_name.lower() != 'nan':
+                self._gene_id_lookup[full_name.lower()] = gene_id
+                self._gene_existence_cache.add(full_name.lower())
+                
+            if symbol and symbol.lower() != 'nan':
+                self._gene_symbol_lookup[symbol.lower()] = gene_id
+                self._gene_existence_cache.add(symbol.lower())
+                
+            if description and description.lower() != 'nan':
+                self._gene_summary_lookup[gene_id] = description
+        
+        print(f"✅ Built gene indices: {len(self._gene_id_lookup)} name mappings, {len(self._gene_symbol_lookup)} symbol mappings")
+    
+    def _build_uniprot_indices(self) -> None:
+        """Build efficient lookup indices for UniProt operations."""
+        if self._uniprot_lookup is not None:
+            return  # Already built
+            
+        print("🔨 Building UniProt lookup indices...")
+        
+        self._uniprot_lookup = {}
+        
+        # Build UniProt indices
+        for _, row in self.uniprot_db.iterrows():
+            entry = str(row['Entry']).strip()
+            entry_name = str(row['Entry Name']).strip()
+            protein_names = str(row['Protein names']).strip()
+            gene_names = str(row['Gene Names']).strip()
+            organism = str(row.get('Organism', 'Phaseolus vulgaris')).strip()
+            
+            # Create UniProt info object
+            uniprot_info = {
+                'entry': entry,
+                'entry_name': entry_name,
+                'protein_names': protein_names,
+                'gene_names': gene_names,
+                'organism': organism
+            }
+            
+            # Index by various gene name variations
+            if gene_names and gene_names.lower() != 'nan':
+                # Split gene names by common separators
+                for gene_name in gene_names.replace(';', ' ').replace(',', ' ').split():
+                    gene_name = gene_name.strip().lower()
+                    if gene_name:
+                        self._uniprot_lookup[gene_name] = uniprot_info
+                        self._gene_existence_cache.add(gene_name)
+            
+            # Also index by entry name
+            if entry_name and entry_name.lower() != 'nan':
+                self._uniprot_lookup[entry_name.lower()] = uniprot_info
+                self._gene_existence_cache.add(entry_name.lower())
+        
+        print(f"✅ Built UniProt indices: {len(self._uniprot_lookup)} gene mappings")
+    
     def _load_gene_db(self) -> None:
-        """Load the NCBI gene database."""
+        """Load the NCBI gene database with optimized format preference."""
         try:
-            self._gene_db = pd.read_excel(settings.gene_db_path)
-            print(f"✅ Loaded {len(self._gene_db)} genes from {settings.gene_db_path}")
+            # Try to load from optimized CSV format first
+            csv_path = settings.gene_db_path.replace('.xlsx', '.csv')
+            if os.path.exists(csv_path):
+                print(f"📈 Loading from optimized CSV format: {csv_path}")
+                self._gene_db = pd.read_csv(csv_path)
+            else:
+                print(f"📊 Loading from Excel format: {settings.gene_db_path}")
+                self._gene_db = pd.read_excel(settings.gene_db_path)
+                
+                # Create optimized CSV for future loads
+                try:
+                    print(f"💾 Creating optimized CSV for future loads: {csv_path}")
+                    self._gene_db.to_csv(csv_path, index=False)
+                    print(f"✅ Saved optimized format: {csv_path}")
+                except Exception as e:
+                    print(f"⚠️ Could not save optimized format: {e}")
+                    
+            print(f"✅ Loaded {len(self._gene_db)} genes from gene database")
+            
+            # Build indices immediately after loading
+            self._build_gene_indices()
         except FileNotFoundError:
             raise DatabaseError(f"Gene database not found at {settings.gene_db_path}")
         except Exception as e:
             raise DatabaseError(f"Failed to load gene database: {str(e)}")
     
     def _load_uniprot_db(self) -> None:
-        """Load the UniProt database."""
+        """Load the UniProt database with optimized format preference."""
         try:
-            self._uniprot_db = pd.read_excel(settings.uniprot_db_path)
-            print(f"✅ Loaded {len(self._uniprot_db)} UniProt entries from {settings.uniprot_db_path}")
+            # Try to load from optimized CSV format first
+            csv_path = settings.uniprot_db_path.replace('.xlsx', '.csv')
+            if os.path.exists(csv_path):
+                print(f"📈 Loading from optimized CSV format: {csv_path}")
+                self._uniprot_db = pd.read_csv(csv_path)
+            else:
+                print(f"📊 Loading from Excel format: {settings.uniprot_db_path}")
+                self._uniprot_db = pd.read_excel(settings.uniprot_db_path)
+                
+                # Create optimized CSV for future loads
+                try:
+                    print(f"💾 Creating optimized CSV for future loads: {csv_path}")
+                    self._uniprot_db.to_csv(csv_path, index=False)
+                    print(f"✅ Saved optimized format: {csv_path}")
+                except Exception as e:
+                    print(f"⚠️ Could not save optimized format: {e}")
+                    
+            print(f"✅ Loaded {len(self._uniprot_db)} UniProt entries from database")
+            
+            # Build indices immediately after loading
+            self._build_uniprot_indices()
         except FileNotFoundError:
             raise DatabaseError(f"UniProt database not found at {settings.uniprot_db_path}")
         except Exception as e:
             raise DatabaseError(f"Failed to load UniProt database: {str(e)}")
     
     def _load_bean_data(self) -> None:
-        """Load the bean trial data."""
+        """Load the bean trial data with optimized format preference."""
         try:
-            df = pd.read_excel(settings.merged_data_path)
+            # Try to load from optimized CSV format first
+            csv_path = settings.merged_data_path.replace('.xlsx', '.csv')
+            if os.path.exists(csv_path):
+                print(f"📈 Loading from optimized CSV format: {csv_path}")
+                df = pd.read_csv(csv_path)
+            else:
+                print(f"📊 Loading from Excel format: {settings.merged_data_path}")
+                df = pd.read_excel(settings.merged_data_path)
+                
+                # Create optimized CSV for future loads
+                try:
+                    print(f"💾 Creating optimized CSV for future loads: {csv_path}")
+                    df.to_csv(csv_path, index=False)
+                    print(f"✅ Saved optimized format: {csv_path}")
+                except Exception as e:
+                    print(f"⚠️ Could not save optimized format: {e}")
             
             # Clean and process the data
             df = df[
@@ -90,7 +227,7 @@ class DatabaseManager:
                 df['trial_group'] = df['trial_group'].astype(str).str.lower()
             
             self._bean_data = df
-            print(f"✅ Loaded {len(self._bean_data)} bean trial records from {settings.merged_data_path}")
+            print(f"✅ Loaded {len(self._bean_data)} bean trial records from database")
             
         except FileNotFoundError:
             raise DatabaseError(f"Bean dataset not found at {settings.merged_data_path}")
@@ -127,32 +264,68 @@ class DatabaseManager:
             raise DatabaseError(f"Failed to load RAG lookup: {str(e)}")
     
     def is_gene_in_databases(self, gene_name: str) -> bool:
-        """Check if a gene name exists in either NCBI or UniProt databases."""
+        """Check if a gene name exists in either NCBI or UniProt databases using fast lookup."""
         try:
-            # Check NCBI database
-            if not self.gene_db.empty:
-                ncbi_matches = self.gene_db[
-                    self.gene_db['Symbol'].str.contains(gene_name, case=False, na=False) |
-                    self.gene_db['FullGeneName'].str.contains(gene_name, case=False, na=False) |
-                    self.gene_db['Description'].str.contains(gene_name, case=False, na=False)
-                ]
-                if not ncbi_matches.empty:
-                    return True
+            # Ensure indices are built
+            if self._gene_existence_cache is None:
+                self._build_gene_indices()
+                self._build_uniprot_indices()
             
-            # Check UniProt database
-            if not self.uniprot_db.empty:
-                uniprot_matches = self.uniprot_db[
-                    self.uniprot_db['Gene Names'].str.contains(gene_name, case=False, na=False) |
-                    self.uniprot_db['Protein names'].str.contains(gene_name, case=False, na=False)
-                ]
-                if not uniprot_matches.empty:
-                    return True
-            
-            return False
+            # Fast O(1) lookup
+            return gene_name.lower() in self._gene_existence_cache
             
         except Exception as e:
             print(f"⚠️ Error checking gene in databases: {e}")
             return False
+    
+    def map_to_gene_id(self, gene_name: str) -> Optional[str]:
+        """Fast gene name to ID mapping using lookup indices."""
+        try:
+            # Ensure indices are built
+            if self._gene_id_lookup is None:
+                self._build_gene_indices()
+            
+            gene_lower = gene_name.lower()
+            
+            # Try exact name match first
+            if gene_lower in self._gene_id_lookup:
+                return self._gene_id_lookup[gene_lower]
+            
+            # Try symbol match
+            if gene_lower in self._gene_symbol_lookup:
+                return self._gene_symbol_lookup[gene_lower]
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error mapping gene to ID: {e}")
+            return None
+    
+    def get_gene_summary(self, gene_id: str) -> Optional[str]:
+        """Fast gene summary lookup using lookup indices."""
+        try:
+            # Ensure indices are built
+            if self._gene_summary_lookup is None:
+                self._build_gene_indices()
+            
+            return self._gene_summary_lookup.get(gene_id)
+            
+        except Exception as e:
+            print(f"Error getting gene summary: {e}")
+            return None
+    
+    def get_uniprot_info(self, gene_name: str) -> Optional[Dict]:
+        """Fast UniProt information lookup using lookup indices."""
+        try:
+            # Ensure indices are built
+            if self._uniprot_lookup is None:
+                self._build_uniprot_indices()
+            
+            return self._uniprot_lookup.get(gene_name.lower())
+            
+        except Exception as e:
+            print(f"Error getting UniProt info: {e}")
+            return None
     
     def get_rag_context_from_dois(self, dois: list[str]) -> tuple[str, list[str]]:
         """Get RAG context from DOIs."""

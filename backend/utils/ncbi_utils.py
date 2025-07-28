@@ -68,8 +68,8 @@ def extract_gene_mentions(text: str) -> tuple[list[str], set[str], set[str]]:
         # Now validate GPT results against databases and find additional matches
         db_validated_genes = []
         for gene in gpt_genes:
-            # Check if this gene exists in our databases
-            if is_gene_in_databases(gene):
+            # Check if this gene exists in our databases using fast lookup
+            if db_manager.is_gene_in_databases(gene):
                 db_validated_genes.append(gene)
         
         print(f"Database validated genes: {db_validated_genes}")
@@ -83,101 +83,19 @@ def extract_gene_mentions(text: str) -> tuple[list[str], set[str], set[str]]:
 
 def is_gene_in_databases(gene_name: str) -> bool:
     """Check if a gene exists in either NCBI or UniProt databases."""
-    try:
-        # Check NCBI database
-        gene_db = db_manager.gene_db
-        ncbi_matches = gene_db[
-            gene_db['FullGeneName'].str.contains(gene_name, case=False, na=False) |
-            gene_db['GeneID'].astype(str).str.contains(gene_name, case=False, na=False) |
-            gene_db['Symbol'].str.contains(gene_name, case=False, na=False)
-        ]
-        
-        if not ncbi_matches.empty:
-            return True
-            
-        # Check UniProt database
-        uniprot_db = db_manager.uniprot_db
-        uniprot_matches = uniprot_db[
-            uniprot_db['Gene Names'].str.contains(gene_name, case=False, na=False) |
-            uniprot_db['Entry Name'].str.contains(gene_name, case=False, na=False) |
-            uniprot_db['Protein names'].str.contains(gene_name, case=False, na=False)
-        ]
-        
-        return not uniprot_matches.empty
-        
-    except Exception as e:
-        print(f"Error checking gene in databases: {e}")
-        return False
+    return db_manager.is_gene_in_databases(gene_name)
 
 
 def map_to_gene_id(gene_name: str) -> Optional[str]:
     """Map a gene name to its Gene ID using the database manager."""
-    try:
-        gene_db = db_manager.gene_db
-        
-        # Try exact match first
-        exact_match = gene_db[gene_db['FullGeneName'] == gene_name]
-        if not exact_match.empty:
-            return str(exact_match.iloc[0]['GeneID'])
-        
-        # Try case-insensitive match
-        case_match = gene_db[gene_db['FullGeneName'].str.lower() == gene_name.lower()]
-        if not case_match.empty:
-            return str(case_match.iloc[0]['GeneID'])
-        
-        # Try symbol match
-        symbol_match = gene_db[gene_db['Symbol'].str.lower() == gene_name.lower()]
-        if not symbol_match.empty:
-            return str(symbol_match.iloc[0]['GeneID'])
-        
-        return None
-        
-    except Exception as e:
-        print(f"Error mapping gene to ID: {e}")
-        return None
+    return db_manager.map_to_gene_id(gene_name)
 
 
 def get_gene_summary(gene_id: str) -> Optional[str]:
     """Get gene summary from the database manager."""
-    try:
-        gene_db = db_manager.gene_db
-        
-        # Find the gene by ID
-        gene_match = gene_db[gene_db['GeneID'].astype(str) == gene_id]
-        if not gene_match.empty:
-            return gene_match.iloc[0]['Description']
-        
-        return None
-        
-    except Exception as e:
-        print(f"Error getting gene summary: {e}")
-        return None
+    return db_manager.get_gene_summary(gene_id)
 
 
 def get_uniprot_info(gene_name: str) -> Optional[Dict]:
     """Get UniProt information for a gene."""
-    try:
-        uniprot_db = db_manager.uniprot_db
-        
-        # Search in gene names and protein names
-        matches = uniprot_db[
-            uniprot_db['Gene Names'].str.contains(gene_name, case=False, na=False) |
-            uniprot_db['Entry Name'].str.contains(gene_name, case=False, na=False) |
-            uniprot_db['Protein names'].str.contains(gene_name, case=False, na=False)
-        ]
-        
-        if not matches.empty:
-            first_match = matches.iloc[0]
-            return {
-                'entry': first_match['Entry'],
-                'entry_name': first_match['Entry Name'],
-                'protein_names': first_match['Protein names'],
-                'gene_names': first_match['Gene Names'],
-                'organism': first_match.get('Organism', 'Phaseolus vulgaris')
-            }
-        
-        return None
-        
-    except Exception as e:
-        print(f"Error getting UniProt info: {e}")
-        return None 
+    return db_manager.get_uniprot_info(gene_name) 
