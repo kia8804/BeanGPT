@@ -13,9 +13,10 @@ export default defineConfig({
       },
     },
   },
+  base: process.env.NODE_ENV === 'production' ? '/BeanGPT/' : '/',
   build: {
     outDir: 'dist',
     sourcemap: false,
+    assetsDir: 'assets',
   },
-  base: process.env.NODE_ENV === 'production' ? '/BeanGPT/' : '/',
 }) 
