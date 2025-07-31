@@ -506,7 +506,7 @@ def continue_with_research_stream(question: str, conversation_history: List[Dict
     }
 
 
-def answer_question_stream(question: str, conversation_history: List[Dict] = None, api_key: str = None):
+async def answer_question_stream(question: str, conversation_history: List[Dict] = None, api_key: str = None):
     """
     Stream the answer to a question with progress updates.
     Now requires user-provided API key.
@@ -702,15 +702,21 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     # Get the full response for gene extraction
     full_response = query_openai(context, source_list, question, conversation_history, api_key)
     
-    # Extract genes from the complete answer
+    # Extract genes from the complete answer (async-safe)
     yield {"type": "progress", "data": {"step": "gene_extraction", "detail": "Extracting gene mentions from research text"}}
     print("🧬 Extracting gene mentions...")
-    gene_mentions, db_hits, gpt_hits = extract_gene_mentions(full_response)
-    print(f"Found gene mentions: {gene_mentions}")
+    try:
+        import asyncio
+        gene_mentions, db_hits, gpt_hits = await asyncio.to_thread(extract_gene_mentions, full_response)
+        print(f"Found gene mentions: {gene_mentions}")
 
-    # Batch process genes for better performance
-    yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
-    gene_summaries = process_genes_batch(gene_mentions)
+        # Batch process genes for better performance
+        yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
+        gene_summaries = await asyncio.to_thread(process_genes_batch, gene_mentions)
+    except Exception as e:
+        print(f"⚠️ Gene extraction failed: {e}")
+        gene_mentions, db_hits, gpt_hits = [], set(), set()
+        gene_summaries = []
 
     yield {"type": "progress", "data": {"step": "sources", "detail": "Generating research references and citations"}}
 

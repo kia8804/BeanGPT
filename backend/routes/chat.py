@@ -36,7 +36,7 @@ async def chat_endpoint(request: ChatRequest):
         
         # Stream the answer
         full_answer = ""
-        for chunk in answer_question_stream(request.question, request.conversation_history, api_key):
+        async for chunk in answer_question_stream(request.question, request.conversation_history, api_key):
             if chunk["type"] == "content":
                 full_answer += chunk["data"]
                 yield f"data: {json.dumps(chunk)}\n\n"
