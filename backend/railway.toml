@@ -19,7 +19,7 @@ TOP_K = "8"
 ALPHA = "0.6"
 
 # CORS
-CORS_ORIGINS = "https://your-frontend-domain.github.io"
+CORS_ORIGINS = "https://kia8804.github.io,http://localhost:5173"
 API_PREFIX = "/api"
 
 # Note: PINECONE_API_KEY must be set manually in Railway dashboard
