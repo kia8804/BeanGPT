@@ -22,7 +22,7 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    def generate():
+    async def generate():
         # Require user-provided API key - no fallback to environment
         api_key = request.api_key
         if not api_key:
