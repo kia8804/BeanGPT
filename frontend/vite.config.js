@@ -17,5 +17,5 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
   },
-  base: '/', // Update this to '/your-repo-name/' if deploying to a GitHub repo subdirectory
+  base: '/BeanGPT/', // GitHub Pages subdirectory
 }) 
