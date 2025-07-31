@@ -11,8 +11,8 @@ restartPolicyMaxRetries = 3
 # Models
 BGE_MODEL = "BAAI/bge-base-en-v1.5"
 PUBMEDBERT_MODEL = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
-BGE_INDEX_NAME = "dry-bean-bge-abstract"
-PUBMEDBERT_INDEX_NAME = "dry-bean-pubmedbert-abstract"
+BGE_INDEX_NAME = "bge-production"
+PUBMEDBERT_INDEX_NAME = "pubmed-production"
 
 # Search config
 TOP_K = "8"
