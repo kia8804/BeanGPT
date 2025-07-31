@@ -856,7 +856,11 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     print(f"Found gene mentions: {gene_mentions}")
 
     # Batch process genes for better performance
-    gene_summaries = process_genes_batch(gene_mentions)
+    try:
+        gene_summaries = await asyncio.to_thread(process_genes_batch, gene_mentions)
+    except Exception as e:
+        print(f"⚠️ Gene processing failed: {e}")
+        gene_summaries = []
 
     print(f"✅ Gene extraction completed. Found {len(gene_summaries)} genes.")
     return final_answer, confirmed_dois, gene_summaries, "" 
