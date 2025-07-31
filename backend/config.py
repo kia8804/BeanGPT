@@ -19,8 +19,8 @@ class Settings:
         # Model Configuration
         self.bge_model = os.getenv("BGE_MODEL", "BAAI/bge-base-en-v1.5")
         self.pubmedbert_model = os.getenv("PUBMEDBERT_MODEL", "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext")
-        self.bge_index_name = os.getenv("BGE_INDEX_NAME", "dry-bean-bge-abstract")
-        self.pubmedbert_index_name = os.getenv("PUBMEDBERT_INDEX_NAME", "dry-bean-pubmedbert-abstract")
+        self.bge_index_name = os.getenv("BGE_INDEX_NAME", "bge-production")
+        self.pubmedbert_index_name = os.getenv("PUBMEDBERT_INDEX_NAME", "pubmed-production")
         
         # Search Configuration
         self.top_k = int(os.getenv("TOP_K", "8"))
