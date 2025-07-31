@@ -40,8 +40,8 @@ In Railway dashboard:
 ### Optional Variables (already set in railway.toml):
 - `BGE_MODEL` = `BAAI/bge-base-en-v1.5`
 - `PUBMEDBERT_MODEL` = `microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext`
-- `BGE_INDEX_NAME` = `dry-bean-bge-abstract`
-- `PUBMEDBERT_INDEX_NAME` = `dry-bean-pubmedbert-abstract`
+- `BGE_INDEX_NAME` = `bge-production`
+- `PUBMEDBERT_INDEX_NAME` = `pubmed-production`
 - `TOP_K` = `8`
 - `ALPHA` = `0.6`
 - `API_PREFIX` = `/api`
