@@ -23,4 +23,4 @@ COPY . .
 EXPOSE 8000
 
 # Command to run the application
-CMD ["sh", "-c", "echo 'Starting BeanGPT Backend...' && echo 'PORT is:' $PORT && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
