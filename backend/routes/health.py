@@ -25,8 +25,11 @@ async def readiness_check() -> Dict[str, Any]:
     Readiness check - verifies core dependencies are available.
     """
     try:
-        # Check if we can connect to Pinecone
-        from services.pipeline import pc
+        # Check if we can connect to Pinecone without importing models
+        from pinecone import Pinecone
+        from config import settings
+        
+        pc = Pinecone(api_key=settings.pinecone_api_key)
         # Simple connection test
         pc.list_indexes()
         

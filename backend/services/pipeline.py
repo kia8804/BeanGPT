@@ -26,17 +26,30 @@ load_dotenv()
 # Initialize Pinecone
 pc = Pinecone(api_key=settings.pinecone_api_key)
 
-# --- Load Models at Startup for Best Performance ---
-print("🔄 Loading BGE model...")
-bge_model = SentenceTransformer(settings.bge_model)
-print("✅ BGE model loaded")
+# --- Initialize models as None (load on first use for Railway) ---
+_bge_model = None
+_tokenizer = None
+_pub_model = None
+_device = None
 
-print("🔄 Loading PubMedBERT model...")
-tokenizer = AutoTokenizer.from_pretrained(settings.pubmedbert_model)
-pub_model = AutoModel.from_pretrained(settings.pubmedbert_model)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-pub_model.to(device).eval()
-print("✅ PubMedBERT model loaded")
+def get_models():
+    """Load models on first use to avoid startup timeouts."""
+    global _bge_model, _tokenizer, _pub_model, _device
+    
+    if _bge_model is None:
+        print("🔄 Loading BGE model...")
+        _bge_model = SentenceTransformer(settings.bge_model)
+        print("✅ BGE model loaded")
+    
+    if _tokenizer is None or _pub_model is None:
+        print("🔄 Loading PubMedBERT model...")
+        _tokenizer = AutoTokenizer.from_pretrained(settings.pubmedbert_model)
+        _pub_model = AutoModel.from_pretrained(settings.pubmedbert_model)
+        _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        _pub_model.to(_device).eval()
+        print("✅ PubMedBERT model loaded")
+    
+    return _bge_model, _tokenizer, _pub_model, _device
 
 # --- Gene Processing Functions ---
 def process_genes_batch(gene_mentions: List[str]) -> List[Dict[str, Any]]:
@@ -142,6 +155,7 @@ def mean_pooling(last_hidden_state, attention_mask):
     return (last_hidden_state * mask).sum(1) / mask.sum(1)
 
 def embed_query_pubmedbert(query: str) -> List[float]:
+    _, tokenizer, pub_model, device = get_models()
     encoded = tokenizer(
         query, return_tensors="pt", padding=True, truncation=True, max_length=512
     )
@@ -430,6 +444,7 @@ def continue_with_research_stream(question: str, conversation_history: List[Dict
     
     yield {"type": "progress", "data": {"step": "embeddings", "detail": "Processing semantic embeddings"}}
     
+    bge_model, _, _, _ = get_models()
     bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
     pub_vec = embed_query_pubmedbert(question)
     
@@ -654,6 +669,7 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     # --- Continue with research literature search for all non-bean-data cases ---
     yield {"type": "progress", "data": {"step": "embeddings", "detail": "Processing semantic embeddings"}}
     
+    bge_model, _, _, _ = get_models()
     bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
     pub_vec = embed_query_pubmedbert(question)
     
@@ -788,6 +804,7 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
 
     # --- RAG pipeline for research papers ---
     print("🔬 Proceeding with research paper search...")
+    bge_model, _, _, _ = get_models()
     bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
     pub_vec = embed_query_pubmedbert(question)
     
