@@ -8,16 +8,16 @@ from database.manager import db_manager
 
 # OpenAI client will be initialized in functions as needed
 
-def extract_gene_mentions(text: str) -> tuple[list[str], set[str], set[str]]:
+def extract_gene_mentions(text: str, api_key: str = None) -> tuple[list[str], set[str], set[str]]:
     """Ask GPT to extract actual gene names and molecular markers from input text.
 
     This function first uses GPT to identify potential genetic elements from the text,
     then validates those candidates against the local NCBI and UniProt databases.
     This approach ensures we only consider genes that are actually mentioned in the text.
     """
-    # Initialize OpenAI client (simple approach for research use)
+    # Initialize OpenAI client with provided API key
     from .openai_client import create_openai_client
-    client = create_openai_client()
+    client = create_openai_client(api_key)
     
     system_prompt = (
         "Based on the user's input, extract and list only the molecular entities—which may include genes, specific metabolites, transcriptomic elements, proteins, enzymes, or any other uniquely named molecular markers—directly implicated in Phaseolus vulgaris research.\n\n"

@@ -848,7 +848,7 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     # Extract genes from the complete answer
     print("🧬 Extracting gene mentions...")
     try:
-        gene_mentions, db_hits, gpt_hits = extract_gene_mentions(final_answer)
+        gene_mentions, db_hits, gpt_hits = extract_gene_mentions(final_answer, api_key)
         print(f"Found gene mentions: {gene_mentions}")
 
         # Batch process genes for better performance
