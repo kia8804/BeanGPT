@@ -1,0 +1,3 @@
+[33m9d2a008[m[33m ([m[1;36mHEAD -> [m[1;32mclean-main[m[33m, [m[1;31morigin/clean-main[m[33m)[m Force Railway Python detection with nixpacks.toml and .railwayignore
+[33mfd6d7c7[m Fix Railway detection: Add root requirements.txt and update railway.toml for backend subdirectory
+[33m30b2ee6[m Switch to Railway NIXPACKS deployment instead of Docker

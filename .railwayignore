@@ -4,3 +4,9 @@ node_modules/
 *.md
 .git/
 .github/
+package.json
+package-lock.json
+*.js
+vite.config.js
+tailwind.config.js
+postcss.config.cjs
