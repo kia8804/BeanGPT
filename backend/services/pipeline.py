@@ -848,18 +848,14 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     # Extract genes from the complete answer
     print("🧬 Extracting gene mentions...")
     try:
-        import asyncio
-        gene_mentions, db_hits, gpt_hits = await asyncio.to_thread(extract_gene_mentions, final_answer)
+        gene_mentions, db_hits, gpt_hits = extract_gene_mentions(final_answer)
+        print(f"Found gene mentions: {gene_mentions}")
+
+        # Batch process genes for better performance
+        gene_summaries = process_genes_batch(gene_mentions)
     except Exception as e:
         print(f"⚠️ Gene extraction failed: {e}")
         gene_mentions, db_hits, gpt_hits = [], set(), set()
-    print(f"Found gene mentions: {gene_mentions}")
-
-    # Batch process genes for better performance
-    try:
-        gene_summaries = await asyncio.to_thread(process_genes_batch, gene_mentions)
-    except Exception as e:
-        print(f"⚠️ Gene processing failed: {e}")
         gene_summaries = []
 
     print(f"✅ Gene extraction completed. Found {len(gene_summaries)} genes.")
