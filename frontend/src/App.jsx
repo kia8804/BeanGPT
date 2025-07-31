@@ -741,7 +741,7 @@ export default function App() {
             {!sidebarCollapsed && (
               <div className="flex items-center space-x-3">
                 <img 
-                  src="/images/UniversityOfGuelphLogo.png" 
+                  src={`${import.meta.env.BASE_URL}images/UniversityOfGuelphLogo.png`} 
                   alt="University of Guelph"
                   className="w-10 h-10 object-contain"
                 />
@@ -847,7 +847,7 @@ export default function App() {
           <div className="px-4 py-2">
             <div className="flex justify-center">
               <img 
-                src="/images/DryBeanBreedingLogo.png" 
+                src={`${import.meta.env.BASE_URL}images/DryBeanBreedingLogo.png`} 
                 alt="Dry Bean Breeding & Computational Biology Program"
                 className="w-40 h-20 object-contain"
               />
