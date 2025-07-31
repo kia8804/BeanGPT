@@ -63,7 +63,7 @@ def process_genes_batch(gene_mentions: List[str]) -> List[Dict[str, Any]]:
                 preview_url = f"https://www.uniprot.org/uniprotkb/{uniprot_info['entry']}"
                 gene_summaries.append({
                     "name": gene,
-                    "summary": f"**UniProt Protein Database**\n\n{uniprot_info['protein_names'] or ('UniProt Entry: ' + uniprot_info['entry'])}",
+                    "summary": f"![UniProt Logo](/images/UniProtLogo.png)\n\n**UniProt Protein Database**\n\n{uniprot_info['protein_names'] or ('UniProt Entry: ' + uniprot_info['entry'])}",
                     "link": preview_url,
                     "source": "UniProt Protein Database",
                     "description": uniprot_info['protein_names'] or f"UniProt Entry: {uniprot_info['entry']}"
@@ -81,40 +81,54 @@ def process_genes_batch(gene_mentions: List[str]) -> List[Dict[str, Any]]:
     print(f"✅ Batch processed {len(gene_summaries)} genes")
     return gene_summaries
 
-# --- RAG Context Loading ---
-def load_rag_text_jsonl(path: Path) -> Dict[str, str]:
-    rag_lookup = {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            for line in f:
-                record = orjson.loads(line)
-                doi = record.get("doi") or record.get("source", "").replace(".pdf", "")
-                rag = record.get("summary", "")
-                if doi and rag:
-                    rag_lookup[doi.strip()] = rag.strip()
-    except UnicodeDecodeError:
-        # Fallback to latin-1 if utf-8 fails
-        with open(path, "r", encoding="latin-1") as f:
-            for line in f:
-                record = orjson.loads(line)
-                doi = record.get("doi") or record.get("source", "").replace(".pdf", "")
-                rag = record.get("summary", "")
-                if doi and rag:
-                    rag_lookup[doi.strip()] = rag.strip()
-    return rag_lookup
-
-RAG_LOOKUP = load_rag_text_jsonl(Path(settings.rag_file))
-
-def get_rag_context_from_dois(dois: List[str]) -> Tuple[str, List[str]]:
+# --- RAG Context from Pinecone Metadata ---
+def get_rag_context_from_pinecone_matches(bge_matches: dict, pub_matches: dict, top_dois: List[str]) -> Tuple[str, List[str]]:
+    """Extract context directly from Pinecone matches metadata instead of jsonl file."""
     context_blocks = []
     confirmed_dois = []
-
-    for i, doi in enumerate(dois, 1):
-        if doi in RAG_LOOKUP:
-            summary = RAG_LOOKUP[doi]
-            context_blocks.append(f"[{i}] Source: {doi}\n{summary}")
-            confirmed_dois.append(doi)
-
+    
+    # Create a lookup dictionary from all matches for quick access
+    all_matches = {}
+    
+    # Process BGE matches
+    for match in bge_matches.get("matches", []):
+        doi = match["metadata"].get("doi", "")
+        summary = match["metadata"].get("summary", "")
+        if doi and summary:
+            clean_doi = doi.strip()
+            all_matches[clean_doi] = summary
+    
+    # Process PubMedBERT matches 
+    for match in pub_matches.get("matches", []):
+        doi = match["metadata"].get("doi", "")
+        summary = match["metadata"].get("summary", "")
+        if doi and summary:
+            clean_doi = doi.strip()
+            all_matches[clean_doi] = summary
+    
+    print(f"🔍 Context built with {len(all_matches)} matches from Pinecone")
+    
+    # Build context blocks for the top DOIs
+    context_counter = 1
+    for doi in top_dois:
+        clean_target_doi = doi.strip()
+        if clean_target_doi in all_matches:
+            summary = all_matches[clean_target_doi]
+            context_blocks.append(f"[{context_counter}] Source: {clean_target_doi}\n{summary}")
+            confirmed_dois.append(clean_target_doi)
+            context_counter += 1
+        else:
+            # Try alternative matching approaches
+            for match_doi, summary in all_matches.items():
+                if (clean_target_doi.lower() == match_doi.lower() or
+                    clean_target_doi.replace("https://doi.org/", "").replace("http://doi.org/", "") == 
+                    match_doi.replace("https://doi.org/", "").replace("http://doi.org/", "")):
+                    context_blocks.append(f"[{context_counter}] Source: {match_doi}\n{summary}")
+                    confirmed_dois.append(match_doi)
+                    context_counter += 1
+                    break
+    
+    print(f"✅ Final context: {len(confirmed_dois)} sources available for AI")
     return "\n\n".join(context_blocks), confirmed_dois
 
 # --- Embedding Functions ---
@@ -430,7 +444,7 @@ def continue_with_research_stream(question: str, conversation_history: List[Dict
     
     print("🔎 Top DOIs from Pinecone:", top_dois)
 
-    context, source_list = get_rag_context_from_dois(top_dois)
+    context, source_list = get_rag_context_from_pinecone_matches(bge_res, pub_res, top_dois)
     
     yield {"type": "progress", "data": {"step": "generation", "detail": "Synthesizing findings with AI"}}
 
@@ -447,12 +461,16 @@ def continue_with_research_stream(question: str, conversation_history: List[Dict
     full_response = query_openai(context, source_list, rag_question, conversation_history, api_key)
     
     # Extract genes from the complete answer
+    yield {"type": "progress", "data": {"step": "gene_extraction", "detail": "Extracting gene mentions from research text"}}
     print("🧬 Extracting gene mentions...")
     gene_mentions, db_hits, gpt_hits = extract_gene_mentions(full_response)
     print(f"Found gene mentions: {gene_mentions}")
 
     # Batch process genes for better performance
+    yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
     genes = process_genes_batch(gene_mentions)
+
+    yield {"type": "progress", "data": {"step": "sources", "detail": "Generating research references and citations"}}
 
     yield {"type": "progress", "data": {"step": "finalizing", "detail": "Completing analysis"}}
 
@@ -650,7 +668,7 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     
     print("🔎 Top DOIs from Pinecone:", top_dois)
 
-    context, source_list = get_rag_context_from_dois(top_dois)
+    context, source_list = get_rag_context_from_pinecone_matches(bge_res, pub_res, top_dois)
     
     yield {"type": "progress", "data": {"step": "generation", "detail": "Synthesizing findings with AI"}}
 
@@ -664,12 +682,16 @@ def answer_question_stream(question: str, conversation_history: List[Dict] = Non
     full_response = query_openai(context, source_list, question, conversation_history, api_key)
     
     # Extract genes from the complete answer
+    yield {"type": "progress", "data": {"step": "gene_extraction", "detail": "Extracting gene mentions from research text"}}
     print("🧬 Extracting gene mentions...")
     gene_mentions, db_hits, gpt_hits = extract_gene_mentions(full_response)
     print(f"Found gene mentions: {gene_mentions}")
 
     # Batch process genes for better performance
+    yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
     gene_summaries = process_genes_batch(gene_mentions)
+
+    yield {"type": "progress", "data": {"step": "sources", "detail": "Generating research references and citations"}}
 
     yield {"type": "progress", "data": {"step": "finalizing", "detail": "Completing analysis"}}
 
@@ -777,7 +799,7 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     top_dois = [src for src, _ in top_sources]
     print("🔎 Top DOIs from Pinecone:", top_dois)
 
-    combined_context, confirmed_dois = get_rag_context_from_dois(top_dois)
+    combined_context, confirmed_dois = get_rag_context_from_pinecone_matches(bge_matches, pub_matches, top_dois)
     if not combined_context.strip():
         print("⚠️ No RAG matches found for top DOIs.")
         return "No matching papers found in RAG corpus.", top_dois, [], ""

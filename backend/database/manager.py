@@ -19,7 +19,7 @@ class DatabaseManager:
         self._gene_db: Optional[pd.DataFrame] = None
         self._uniprot_db: Optional[pd.DataFrame] = None
         self._bean_data: Optional[pd.DataFrame] = None
-        self._rag_lookup: Optional[Dict[str, str]] = None
+
         
         # Efficient lookup indices for gene operations
         self._gene_id_lookup: Optional[Dict[str, str]] = None  # gene_name -> gene_id
@@ -49,12 +49,7 @@ class DatabaseManager:
             self._load_bean_data()
         return self._bean_data
     
-    @property
-    def rag_lookup(self) -> Dict[str, str]:
-        """Lazy-loaded RAG context lookup."""
-        if self._rag_lookup is None:
-            self._load_rag_lookup()
-        return self._rag_lookup
+
     
     def _build_gene_indices(self) -> None:
         """Build efficient lookup indices for gene operations."""
@@ -234,34 +229,7 @@ class DatabaseManager:
         except Exception as e:
             raise DatabaseError(f"Failed to load bean dataset: {str(e)}")
     
-    def _load_rag_lookup(self) -> None:
-        """Load the RAG context lookup."""
-        try:
-            rag_lookup = {}
-            
-            # Try UTF-8 first, fallback to latin-1
-            encodings = ['utf-8', 'latin-1']
-            
-            for encoding in encodings:
-                try:
-                    with open(settings.rag_file, 'r', encoding=encoding) as f:
-                        for line in f:
-                            record = orjson.loads(line)
-                            doi = record.get("doi") or record.get("source", "").replace(".pdf", "")
-                            rag = record.get("summary", "")
-                            if doi and rag:
-                                rag_lookup[doi.strip()] = rag.strip()
-                    break
-                except UnicodeDecodeError:
-                    continue
-            
-            self._rag_lookup = rag_lookup
-            print(f"✅ Loaded {len(self._rag_lookup)} RAG entries from {settings.rag_file}")
-            
-        except FileNotFoundError:
-            raise DatabaseError(f"RAG file not found at {settings.rag_file}")
-        except Exception as e:
-            raise DatabaseError(f"Failed to load RAG lookup: {str(e)}")
+
     
     def is_gene_in_databases(self, gene_name: str) -> bool:
         """Check if a gene name exists in either NCBI or UniProt databases using fast lookup."""
@@ -327,18 +295,7 @@ class DatabaseManager:
             print(f"Error getting UniProt info: {e}")
             return None
     
-    def get_rag_context_from_dois(self, dois: list[str]) -> tuple[str, list[str]]:
-        """Get RAG context from DOIs."""
-        context_blocks = []
-        confirmed_dois = []
-        
-        for i, doi in enumerate(dois, 1):
-            if doi in self.rag_lookup:
-                summary = self.rag_lookup[doi]
-                context_blocks.append(f"[{i}] Source: {doi}\n{summary}")
-                confirmed_dois.append(doi)
-        
-        return "\n\n".join(context_blocks), confirmed_dois
+
 
 
 # Global instance - this is acceptable as it's a singleton pattern

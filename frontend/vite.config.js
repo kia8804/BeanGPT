@@ -13,4 +13,9 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+  },
+  base: '/', // Update this to '/your-repo-name/' if deploying to a GitHub repo subdirectory
 }) 

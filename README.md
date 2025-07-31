@@ -43,7 +43,7 @@ This section details the journey of a user's question from the moment it's typed
         -   The question is embedded using two models: BGE (SentenceTransformer) and PubMedBERT.
         -   These embeddings are used to query two corresponding Pinecone indexes (`dry-bean-bge-abstract`, `dry-bean-pubmedbert-abstract`) to find relevant document summaries (abstracts/RAG text) based on similarity.
         -   The results from both models are combined and normalized based on their scores.
-        -   The top relevant documents are retrieved using their DOIs (or source identifiers) from the pre-loaded RAG data (`summaries.jsonl`).
+        -   The top relevant documents and their summaries are retrieved directly from the Pinecone index metadata.
         -   The text summaries of these top documents are compiled as `context`.
         -   An OpenAI call (GPT-4o) is made using this `context`, the list of source DOIs, and the user's original question.
         -   The model is prompted to answer the question using *only* the provided context, formatted according to specific markdown guidelines.
@@ -127,7 +127,7 @@ pip install -r requirements.txt
 OPENAI_API_KEY=your_openai_key
 PINECONE_API_KEY=your_pinecone_key
 GENE_DB_PATH=path/to/NCBI_Filtered_Data_Enriched.xlsx
-RAG_FILE=path/to/summaries.jsonl
+
 ```
 
 4. Run the backend:

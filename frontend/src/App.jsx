@@ -10,6 +10,7 @@ import axios from 'axios';
 import remarkGfm from 'remark-gfm';
 import PlotlyChart from './components/PlotlyChart.jsx';
 import ApiKeyInput from './components/ApiKeyInput.jsx';
+import { API_ENDPOINTS } from './config.js';
 
 const initialMessages = [
   {
@@ -153,7 +154,7 @@ export default function App() {
       setIsStreaming(true);
       setStreamingText('');
 
-      const response = await fetch('http://localhost:8000/api/continue-research', {
+              const response = await fetch(API_ENDPOINTS.CONTINUE_RESEARCH, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -198,6 +199,22 @@ export default function App() {
                   setIsLoading(false);
                   researchText += data.data;
                   setStreamingText(researchText);
+                } else if (data.type === 'progress') {
+                  // Handle progress updates from continue research
+                  if (data.data.step === 'gene_extraction') {
+                    setIsStreaming(false);
+                    setIsPostProcessing(true);
+                    setPostProcessingStep(0);
+                  } else if (data.data.step === 'gene_processing') {
+                    setIsPostProcessing(true);
+                    setPostProcessingStep(1);
+                  } else if (data.data.step === 'sources') {
+                    setIsPostProcessing(true);
+                    setPostProcessingStep(2);
+                  } else if (data.data.step === 'finalizing') {
+                    setIsPostProcessing(true);
+                    setPostProcessingStep(3);
+                  }
                 } else if (data.type === 'error') {
                   // Handle API key errors and other errors
                   setIsLoading(false);
@@ -425,7 +442,7 @@ export default function App() {
         controller.abort();
       }, 120000); // 2 minute timeout
 
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const response = await fetch(API_ENDPOINTS.CHAT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -540,6 +557,19 @@ export default function App() {
                     // Gene analysis
                     const geneStepIndex = currentSteps.findIndex(step => step.step.includes('genetic') || step.step.includes('Analyzing'));
                     if (geneStepIndex >= 0) setCurrentStep(geneStepIndex);
+                  } else if (data.data.step === 'gene_extraction') {
+                    // Start post-processing: gene extraction
+                    setIsStreaming(false);
+                    setIsPostProcessing(true);
+                    setPostProcessingStep(0);
+                  } else if (data.data.step === 'gene_processing') {
+                    // Continue post-processing: gene database lookups
+                    setIsPostProcessing(true);
+                    setPostProcessingStep(1);
+                  } else if (data.data.step === 'sources') {
+                    // Continue post-processing: source generation
+                    setIsPostProcessing(true);
+                    setPostProcessingStep(2);
                   } else if (data.data.step === 'finalizing') {
                     // Final processing
                     const finalStepIndex = currentSteps.findIndex(step => step.step.includes('Finalizing') || step.step.includes('output'));
@@ -1331,7 +1361,7 @@ export default function App() {
             ))}
 
             {/* Streaming Message - Research Continuation */}
-            {isStreaming && streamingText && (
+            {isStreaming && streamingText && !isPostProcessing && (
               <div className="flex justify-start">
                 <div className="max-w-[85%]">
                   <div className="flex items-center space-x-2 mb-2">

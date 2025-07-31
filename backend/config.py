@@ -34,7 +34,7 @@ class Settings:
         # Data Paths
         self.gene_db_path = os.getenv("GENE_DB_PATH", "../data/NCBI_Filtered_Data_Enriched.xlsx")
         self.uniprot_db_path = os.getenv("UNIPROT_DB_PATH", "../data/uniprotkb_Phaseolus_vulgaris.xlsx")
-        self.rag_file = os.getenv("RAG_FILE", "../data/summaries.jsonl")
+
         self.merged_data_path = os.getenv("MERGED_DATA_PATH", "../data/Merged_Bean_Dataset.xlsx")
         
         # API Configuration
