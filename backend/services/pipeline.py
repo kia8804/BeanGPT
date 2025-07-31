@@ -485,7 +485,7 @@ async def continue_with_research_stream(question: str, conversation_history: Lis
     print("🧬 Extracting gene mentions...")
     try:
         import asyncio
-        gene_mentions, db_hits, gpt_hits = await asyncio.to_thread(extract_gene_mentions, full_response)
+        gene_mentions, db_hits, gpt_hits = await asyncio.to_thread(extract_gene_mentions, full_response, api_key)
         print(f"Found gene mentions: {gene_mentions}")
 
         # Batch process genes for better performance
@@ -713,7 +713,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
     print("🧬 Extracting gene mentions...")
     try:
         import asyncio
-        gene_mentions, db_hits, gpt_hits = await asyncio.to_thread(extract_gene_mentions, full_response)
+        gene_mentions, db_hits, gpt_hits = await asyncio.to_thread(extract_gene_mentions, full_response, api_key)
         print(f"Found gene mentions: {gene_mentions}")
 
         # Batch process genes for better performance
