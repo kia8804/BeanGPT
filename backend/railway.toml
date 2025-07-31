@@ -1,0 +1,28 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[environments.production.variables]
+# Models
+BGE_MODEL = "BAAI/bge-base-en-v1.5"
+PUBMEDBERT_MODEL = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext"
+BGE_INDEX_NAME = "dry-bean-bge-abstract"
+PUBMEDBERT_INDEX_NAME = "dry-bean-pubmedbert-abstract"
+
+# Search config
+TOP_K = "8"
+ALPHA = "0.6"
+
+# CORS
+CORS_ORIGINS = "https://your-frontend-domain.github.io"
+API_PREFIX = "/api"
+
+# Note: PINECONE_API_KEY must be set manually in Railway dashboard
+# Note: OPENAI_API_KEY not needed - users enter in UI

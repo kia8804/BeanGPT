@@ -12,7 +12,7 @@ services:
       - key: PINECONE_API_KEY
         sync: false
       - key: BGE_MODEL
-        value: BAAI/bge-small-en-v1.5
+        value: BAAI/bge-base-en-v1.5
       - key: PUBMEDBERT_MODEL
         value: microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext
       - key: BGE_INDEX_NAME

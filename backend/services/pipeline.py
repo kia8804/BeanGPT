@@ -26,12 +26,17 @@ load_dotenv()
 # Initialize Pinecone
 pc = Pinecone(api_key=settings.pinecone_api_key)
 
-# --- Load Models ---
+# --- Load Models at Startup for Best Performance ---
+print("🔄 Loading BGE model...")
 bge_model = SentenceTransformer(settings.bge_model)
+print("✅ BGE model loaded")
+
+print("🔄 Loading PubMedBERT model...")
 tokenizer = AutoTokenizer.from_pretrained(settings.pubmedbert_model)
 pub_model = AutoModel.from_pretrained(settings.pubmedbert_model)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pub_model.to(device).eval()
+print("✅ PubMedBERT model loaded")
 
 # --- Gene Processing Functions ---
 def process_genes_batch(gene_mentions: List[str]) -> List[Dict[str, Any]]:
