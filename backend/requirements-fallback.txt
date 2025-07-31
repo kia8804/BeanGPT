@@ -1,3 +1,4 @@
+# Fallback requirements with Python 3.13 compatible versions
 fastapi==0.109.2
 uvicorn==0.27.1
 python-multipart==0.0.9
@@ -7,13 +8,11 @@ pinecone==5.0.1
 sentence-transformers==2.5.1
 transformers==4.37.2
 torch==2.5.0
-pandas==2.2.3
+pandas>=2.2.3,<3.0.0
 openpyxl==3.1.2
 orjson==3.9.10
-scikit-learn==1.4.0
+scikit-learn>=1.4.0,<2.0.0
 python-dotenv==1.0.1
 plotly==5.18.0
 kaleido==0.2.1
-scipy==1.12.0
-
- 
+scipy>=1.12.0,<2.0.0
