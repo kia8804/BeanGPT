@@ -30,12 +30,17 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
 
   // Validate OpenAI API key format
   const validateApiKeyFormat = (key) => {
-    return key.startsWith('sk-') && key.length >= 20;
+    if (!key) return false;
+    // Support both old (sk-) and new (sk-proj-) formats
+    const hasValidPrefix = key.startsWith('sk-') || key.startsWith('sk-proj-');
+    const hasValidLength = key.length >= 50; // More realistic minimum length
+    console.log('🔑 API Key validation:', { prefix: hasValidPrefix, length: key.length, valid: hasValidLength });
+    return hasValidPrefix && hasValidLength;
   };
 
   // Handle API key input changes
   const handleApiKeyChange = (e) => {
-    const value = e.target.value.trim();
+    const value = e.target.value; // Remove .trim() to avoid key corruption
     setApiKey(value);
     const validFormat = validateApiKeyFormat(value);
     setIsValidFormat(validFormat);
