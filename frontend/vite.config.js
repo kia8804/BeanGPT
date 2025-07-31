@@ -17,5 +17,5 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
   },
-  base: '/BeanGPT/', // GitHub Pages subdirectory
+  base: process.env.NODE_ENV === 'production' ? '/BeanGPT/' : '/',
 }) 
