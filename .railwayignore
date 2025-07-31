@@ -1,0 +1,6 @@
+# Ignore frontend during Railway deployment
+frontend/
+node_modules/
+*.md
+.git/
+.github/
