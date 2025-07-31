@@ -60,7 +60,7 @@ async def chat_endpoint(request: ChatRequest):
 
 @router.post("/continue-research")
 async def continue_research_endpoint(request: ChatRequest):
-    def generate():
+    async def generate():
         # Require user-provided API key - no fallback to environment
         api_key = request.api_key
         if not api_key:
@@ -73,7 +73,7 @@ async def continue_research_endpoint(request: ChatRequest):
             return
         
         # Stream the research continuation
-        for chunk in continue_with_research_stream(request.question, request.conversation_history, api_key):
+        async for chunk in continue_with_research_stream(request.question, request.conversation_history, api_key):
             if chunk["type"] == "content":
                 yield f"data: {json.dumps(chunk)}\n\n"
             elif chunk["type"] == "metadata":

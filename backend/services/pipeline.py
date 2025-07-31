@@ -432,7 +432,7 @@ def generate_suggested_questions(
         print(f"Error generating suggested questions: {e}")
         return []
 
-def continue_with_research_stream(question: str, conversation_history: List[Dict] = None, api_key: str = None):
+async def continue_with_research_stream(question: str, conversation_history: List[Dict] = None, api_key: str = None):
     """
     Continue with research literature search after bean data analysis.
     This is called when the user chooses to proceed with research after bean data.
@@ -480,15 +480,21 @@ def continue_with_research_stream(question: str, conversation_history: List[Dict
     # Get the full response for gene extraction
     full_response = query_openai(context, source_list, rag_question, conversation_history, api_key)
     
-    # Extract genes from the complete answer
+    # Extract genes from the complete answer (async-safe)
     yield {"type": "progress", "data": {"step": "gene_extraction", "detail": "Extracting gene mentions from research text"}}
     print("🧬 Extracting gene mentions...")
-    gene_mentions, db_hits, gpt_hits = extract_gene_mentions(full_response)
-    print(f"Found gene mentions: {gene_mentions}")
+    try:
+        import asyncio
+        gene_mentions, db_hits, gpt_hits = await asyncio.to_thread(extract_gene_mentions, full_response)
+        print(f"Found gene mentions: {gene_mentions}")
 
-    # Batch process genes for better performance
-    yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
-    genes = process_genes_batch(gene_mentions)
+        # Batch process genes for better performance
+        yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
+        genes = await asyncio.to_thread(process_genes_batch, gene_mentions)
+    except Exception as e:
+        print(f"⚠️ Gene extraction failed: {e}")
+        gene_mentions, db_hits, gpt_hits = [], set(), set()
+        genes = []
 
     yield {"type": "progress", "data": {"step": "sources", "detail": "Generating research references and citations"}}
 
@@ -841,7 +847,12 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
 
     # Extract genes from the complete answer
     print("🧬 Extracting gene mentions...")
-    gene_mentions, db_hits, gpt_hits = extract_gene_mentions(final_answer)
+    try:
+        import asyncio
+        gene_mentions, db_hits, gpt_hits = await asyncio.to_thread(extract_gene_mentions, final_answer)
+    except Exception as e:
+        print(f"⚠️ Gene extraction failed: {e}")
+        gene_mentions, db_hits, gpt_hits = [], set(), set()
     print(f"Found gene mentions: {gene_mentions}")
 
     # Batch process genes for better performance
