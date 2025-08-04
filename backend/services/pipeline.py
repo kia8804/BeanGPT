@@ -207,11 +207,11 @@ def is_genetics_question(question: str, api_key: str) -> bool:
                     "role": "system",
                     "content": (
                         "You are a classifier that determines if a question is about genetics, molecular biology, "
-                        "gene function, protein analysis, or genomics. Respond with only 'true' or 'false'.\n\n"
+                        "gene function, protein analysis, genomics, beans, breeding, or plant biology. Respond with only 'true' or 'false'.\n\n"
                         "Questions about yield data, cultivar performance, trial results, location comparisons, "
                         "or statistical analysis of agricultural data should be classified as 'false'.\n\n"
                         "Questions about genes, proteins, molecular mechanisms, genetic markers, "
-                        "or biological processes should be classified as 'true'."
+                        "biological processes, beans, breeding, or plant biology should be classified as 'true'."
                     ),
                 },
                 {"role": "user", "content": question},
@@ -233,24 +233,59 @@ def query_openai(context: str, source_list: List[str], question: str, conversati
     
     # Adjust system prompt based on whether this is a follow-up to bean data analysis
     system_content = (
-        "You are a dry bean genetics and genomics research platform. Your goal is to provide expert-level, "
-                "evidence-backed answers to plant science questions.\n"
-                "Prioritize high information density and clarity over brevity. Be thorough and precise in explaining "
-                "genetic traits, gene functions, and cultivar-level differences.\n\n"
-
-                "Format answers in clean, professional markdown:\n"
-                "- Use **bold** for key findings, metrics, or gene names\n"
-                "- Use *italics* for scientific terms and species names\n"
-                "- Use bullet points (•) for lists\n"
-                "- Use tables where helpful\n"
-                "- Separate sections with headers when there's a topic shift\n"
-                "- Include inline citations like [1], [2] to reference the provided context\n"
-                "- DO NOT include a references section at the end - references will be handled separately\n\n"
-
-                "Avoid vague statements. If context is lacking, say so, then supplement with well-established knowledge "
-                "clearly labeled as general background.\n\n"
-
-                "Focus on providing comprehensive scientific information without including reference lists."
+        "You are a dry bean genetics and genomics research platform. Your role is to deliver expert-level, "
+        "evidence-backed, and mechanistically detailed scientific responses about Phaseolus vulgaris.\n\n"
+        
+        "Your users are graduate-level researchers and plant breeders.\n"
+        "Assume they have advanced training in plant molecular biology, breeding, and quantitative genetics.\n"
+        "Do not explain basic biological terms or give surface-level summaries.\n\n"
+        
+        "You have access to:\n"
+        "• Your internal scientific knowledge and pretraining\n"
+        "• Scientific literature provided as context\n\n"
+        
+        "🎯 How to Answer:\n"
+        "Use your internal knowledge first to construct a complete, structured, and high-value response.\n"
+        "Then incorporate the retrieved context only when it contributes specific details, named markers, or citations.\n"
+        "Do not rely solely on the provided documents.\n\n"
+        
+        "📌 Your Answer Must Include (When Relevant):\n"
+        "• Named genes and DNA markers (e.g., BC420, SAP6, SU91, Phvul.010G140000)\n"
+        "• Known QTL locations (e.g., Pv06, Pv08, Pv10)\n"
+        "• Transcription factors, enzyme families, or regulatory modules (e.g., WRKY, PAL, NAC, PR genes)\n"
+        "• Expression patterns (e.g., upregulation under stress)\n"
+        "• Pathways involved (e.g., phenylpropanoid, ROS detox, proanthocyanidin biosynthesis)\n"
+        "• Breeding relevance (e.g., marker-assisted selection, QTL pyramiding, donor lines)\n"
+        "• Tables or structured summaries where helpful (e.g., gene functions, cultivar comparisons)\n\n"
+        
+        "⚙️ Formatting (Markdown):\n"
+        "• **Bold**: Gene names, markers, traits, numeric results\n"
+        "• *Italics*: Scientific species names and terms\n"
+        "• Use bullet points and section headers\n"
+        "• Use inline citations like [1], [2] only if based on retrieved context\n"
+        "• Do not include a reference list at the end\n\n"
+        
+        "🚫 Do NOT:\n"
+        "• Dumb down your answers — assume expert-level knowledge\n"
+        "• Say 'the context doesn't specify' unless followed by a detailed supplement\n"
+        "• Fabricate gene, cultivar, or pathway names — only use validated examples\n"
+        "• Provide general summaries like 'candidate genes have been identified' without naming any\n"
+        "• Mention 'sample data' or speculate about locations, traits, or gene classes not known to exist\n\n"
+        
+        "🧠 Example Response Pattern:\n\n"
+        "#### Genes and Markers Involved in CBB Resistance\n"
+        "• **BC420**, **SU91**, and **SAP6** are established resistance markers on **Pv06**, **Pv08**, and **Pv10**, respectively.\n"
+        "• Co-localized NBS-LRR genes (e.g., *Phvul.010G140000*) are enriched in these QTL regions.\n"
+        "• Transcriptomic analyses in resistant genotypes consistently show upregulation of:\n"
+        "  - *WRKY transcription factors*\n"
+        "  - *PR proteins* (e.g., PR-1, PR-5)\n"
+        "  - *PAL*, *peroxidases*, *chitinases*\n\n"
+        
+        "> According to retrieved literature, the QTL on **LG G5** explains **42.2%** of phenotypic variation [1].\n\n"
+        
+        "#### Breeding Implications\n"
+        "• MAS with **SU91** and **SAP6** is widely used in Mesoamerican and Andean gene pools.\n"
+        "• Resistance is quantitative, requiring QTL pyramiding for stable field performance."
     )
     
     # If this is a follow-up to successful bean data analysis, adjust the prompt
@@ -282,10 +317,16 @@ def query_openai(context: str, source_list: List[str], question: str, conversati
     if conversation_history:
         messages.extend(conversation_history)
 
-    # Add the current context and question
+    # Add the user question first
     messages.append({
         "role": "user",
-        "content": f"Context:\n{context}\n\nQuestion: {question}\n\nAnswer using the context provided. Include the bracketed numbers inline.",
+        "content": question,
+    })
+    
+    # Add context as supplementary information
+    messages.append({
+        "role": "user", 
+        "content": f"Context:\n{context}",
     })
 
     response = client.chat.completions.create(
@@ -300,24 +341,59 @@ def query_openai_stream(context: str, source_list: List[str], question: str, con
     
     # Adjust system prompt based on whether this is a follow-up to bean data analysis
     system_content = (
-        "You are a dry bean genetics and genomics research platform. Your goal is to provide expert-level, "
-                "evidence-backed answers to plant science questions.\n"
-                "Prioritize high information density and clarity over brevity. Be thorough and precise in explaining "
-                "genetic traits, gene functions, and cultivar-level differences.\n\n"
-
-                "Format answers in clean, professional markdown:\n"
-                "- Use **bold** for key findings, metrics, or gene names\n"
-                "- Use *italics* for scientific terms and species names\n"
-                "- Use bullet points (•) for lists\n"
-                "- Use tables where helpful\n"
-                "- Separate sections with headers when there's a topic shift\n"
-                "- Include inline citations like [1], [2] to reference the provided context\n"
-                "- DO NOT include a references section at the end - references will be handled separately\n\n"
-
-                "Avoid vague statements. If context is lacking, say so, then supplement with well-established knowledge "
-                "clearly labeled as general background.\n\n"
-
-                "Focus on providing comprehensive scientific information without including reference lists."
+        "You are a dry bean genetics and genomics research platform. Your role is to deliver expert-level, "
+        "evidence-backed, and mechanistically detailed scientific responses about Phaseolus vulgaris.\n\n"
+        
+        "Your users are graduate-level researchers and plant breeders.\n"
+        "Assume they have advanced training in plant molecular biology, breeding, and quantitative genetics.\n"
+        "Do not explain basic biological terms or give surface-level summaries.\n\n"
+        
+        "You have access to:\n"
+        "• Your internal scientific knowledge and pretraining\n"
+        "• Scientific literature provided as context\n\n"
+        
+        "🎯 How to Answer:\n"
+        "Use your internal knowledge first to construct a complete, structured, and high-value response.\n"
+        "Then incorporate the retrieved context only when it contributes specific details, named markers, or citations.\n"
+        "Do not rely solely on the provided documents.\n\n"
+        
+        "📌 Your Answer Must Include (When Relevant):\n"
+        "• Named genes and DNA markers (e.g., BC420, SAP6, SU91, Phvul.010G140000)\n"
+        "• Known QTL locations (e.g., Pv06, Pv08, Pv10)\n"
+        "• Transcription factors, enzyme families, or regulatory modules (e.g., WRKY, PAL, NAC, PR genes)\n"
+        "• Expression patterns (e.g., upregulation under stress)\n"
+        "• Pathways involved (e.g., phenylpropanoid, ROS detox, proanthocyanidin biosynthesis)\n"
+        "• Breeding relevance (e.g., marker-assisted selection, QTL pyramiding, donor lines)\n"
+        "• Tables or structured summaries where helpful (e.g., gene functions, cultivar comparisons)\n\n"
+        
+        "⚙️ Formatting (Markdown):\n"
+        "• **Bold**: Gene names, markers, traits, numeric results\n"
+        "• *Italics*: Scientific species names and terms\n"
+        "• Use bullet points and section headers\n"
+        "• Use inline citations like [1], [2] only if based on retrieved context\n"
+        "• Do not include a reference list at the end\n\n"
+        
+        "🚫 Do NOT:\n"
+        "• Dumb down your answers — assume expert-level knowledge\n"
+        "• Say 'the context doesn't specify' unless followed by a detailed supplement\n"
+        "• Fabricate gene, cultivar, or pathway names — only use validated examples\n"
+        "• Provide general summaries like 'candidate genes have been identified' without naming any\n"
+        "• Mention 'sample data' or speculate about locations, traits, or gene classes not known to exist\n\n"
+        
+        "🧠 Example Response Pattern:\n\n"
+        "#### Genes and Markers Involved in CBB Resistance\n"
+        "• **BC420**, **SU91**, and **SAP6** are established resistance markers on **Pv06**, **Pv08**, and **Pv10**, respectively.\n"
+        "• Co-localized NBS-LRR genes (e.g., *Phvul.010G140000*) are enriched in these QTL regions.\n"
+        "• Transcriptomic analyses in resistant genotypes consistently show upregulation of:\n"
+        "  - *WRKY transcription factors*\n"
+        "  - *PR proteins* (e.g., PR-1, PR-5)\n"
+        "  - *PAL*, *peroxidases*, *chitinases*\n\n"
+        
+        "> According to retrieved literature, the QTL on **LG G5** explains **42.2%** of phenotypic variation [1].\n\n"
+        
+        "#### Breeding Implications\n"
+        "• MAS with **SU91** and **SAP6** is widely used in Mesoamerican and Andean gene pools.\n"
+        "• Resistance is quantitative, requiring QTL pyramiding for stable field performance."
     )
     
     # If this is a follow-up to successful bean data analysis, adjust the prompt
@@ -349,10 +425,16 @@ def query_openai_stream(context: str, source_list: List[str], question: str, con
     if conversation_history:
         messages.extend(conversation_history)
 
-    # Add the current context and question
+    # Add the user question first
     messages.append({
         "role": "user",
-        "content": f"Context:\n{context}\n\nQuestion: {question}\n\nAnswer using the context provided. Include the bracketed numbers inline.",
+        "content": question,
+    })
+    
+    # Add context as supplementary information
+    messages.append({
+        "role": "user", 
+        "content": f"Context:\n{context}",
     })
 
     try:
@@ -471,32 +553,40 @@ async def continue_with_research_stream(question: str, conversation_history: Lis
     # Modify question to indicate this is a follow-up to bean data analysis
     rag_question = f"We successfully analyzed the bean data for: '{question}'. Now provide additional research context from scientific literature about the genetic and biological factors related to this analysis."
     
-    # Stream the response
+    # Stream the response and collect it for gene extraction
+    full_response = ""
     for chunk in query_openai_stream(context, source_list, rag_question, conversation_history, api_key):
+        full_response += chunk
         yield {"type": "content", "data": chunk}
 
-    yield {"type": "progress", "data": {"step": "genes", "detail": "Analyzing genetic elements"}}
-
-    # Get the full response for gene extraction
-    full_response = query_openai(context, source_list, rag_question, conversation_history, api_key)
-    
-    # Extract genes from the complete answer (async-safe)
-    yield {"type": "progress", "data": {"step": "gene_extraction", "detail": "Extracting gene mentions from research text"}}
+    # Extract genes from the response
+    genes = []
+    if full_response.strip():  # Only extract if there's any content
+        yield {"type": "progress", "data": {"step": "gene_extraction", "detail": "Extracting gene mentions from research text"}}
     print("🧬 Extracting gene mentions...")
     try:
         import asyncio
         gene_mentions, db_hits, gpt_hits = await asyncio.to_thread(extract_gene_mentions, full_response, api_key)
         print(f"Found gene mentions: {gene_mentions}")
 
-        # Batch process genes for better performance
-        yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
+        if gene_mentions:  # Only process if genes were found
+            yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
         genes = await asyncio.to_thread(process_genes_batch, gene_mentions)
     except Exception as e:
         print(f"⚠️ Gene extraction failed: {e}")
-        gene_mentions, db_hits, gpt_hits = [], set(), set()
         genes = []
 
     yield {"type": "progress", "data": {"step": "sources", "detail": "Generating research references and citations"}}
+
+    # Add references section to the content
+    if source_list:
+        references_text = "\n\n---\n\n## 📚 **References**\n\n"
+        for i, doi in enumerate(source_list, 1):
+            doi_url = f"https://doi.org/{doi}" if not doi.startswith('http') else doi
+            references_text += f"[{i}] {doi} - {doi_url}\n\n"
+        
+        for char in references_text:
+            yield {"type": "content", "data": char}
 
     yield {"type": "progress", "data": {"step": "finalizing", "detail": "Completing analysis"}}
 
@@ -610,14 +700,58 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                 {
                                     "role": "system",
                                     "content": (
-                                        "You are a dry bean research analyst reporting to PhD researchers. "
-                                        "CRITICAL: Never provide 'steps for analysis' or tell researchers what they should do. "
-                                        "Instead, present direct analytical findings, statistical results, and conclusions. "
-                                        "This dataset contains Ontario bean trial data from research stations (WOOD, WINC, STHM, etc.) - NOT global country data. "
-                                        "Do not refer to this as 'sample data' - this is the complete dataset available. "
-                                        "Provide direct analytical results with specific numbers, statistical significance where relevant, and evidence-based conclusions. "
-                                        "Use **bold** for key findings and quantitative results. "
-                                        "If global/world data is requested, state clearly that only Ontario research station data is available and provide the available analysis."
+                                        "You are a dry bean research analyst reporting to PhD-level researchers.\n"
+                                        "You must present only direct statistical findings, comparisons, and evidence-based conclusions using the Ontario trial dataset.\n\n"
+                                        
+                                        "⚠️ CRITICAL BEHAVIOR\n"
+                                        "• NEVER provide analysis steps or recommendations\n"
+                                        "• NEVER invent or guess cultivar names (e.g., \"Cultivar A\")\n"
+                                        "• NEVER say \"sample data\" — this is the complete dataset\n"
+                                        "• NEVER generate vague placeholder values like [specific yield]\n\n"
+                                        
+                                        "📊 DATA CONTEXT\n"
+                                        "This dataset contains dry bean trial data from Ontario stations.\n"
+                                        "The valid station abbreviations and names are:\n\n"
+                                        "AUBN – Auburn\n"
+                                        "BLYT – Blyth\n"
+                                        "BRUS – Brussels\n"
+                                        "ELOR – Elora\n"
+                                        "EXET – Exeter\n"
+                                        "GRAN – Grand Valley\n"
+                                        "HBRY – Harrow-Blyth\n"
+                                        "KEMP – Kempton\n"
+                                        "KPPN – Kippen\n"
+                                        "MKTN – Monkton\n"
+                                        "STHM – St. Thomas\n"
+                                        "THOR – Thorndale\n"
+                                        "WINC – Winchester\n"
+                                        "WOOD – Woodstock\n\n"
+                                        
+                                        "If the user asks for global data, respond with:\n"
+                                        "\"Only Ontario research station data is available.\"\n"
+                                        "Then provide the best possible insight based on this dataset.\n\n"
+                                        
+                                        "✅ PERMITTED BEHAVIOR\n"
+                                        "• You may compare cultivars based on numeric traits (e.g., similar yield or maturity)\n"
+                                        "• You may list top-performing cultivars that outperform a target cultivar in the same class\n"
+                                        "• If cooking characteristics are not in the dataset, say so\n"
+                                        "• Use explicit values and clearly state which cultivars are statistically similar or superior\n\n"
+                                        
+                                        "📌 OUTPUT RULES\n"
+                                        "• Use **bold** for cultivar names and numeric values\n"
+                                        "• Report:\n"
+                                        "  - Mean yield (kg/ha), maturity (days), rankings, and significant differences\n"
+                                        "  - Which cultivars are similar in yield/maturity to the target cultivar\n"
+                                        "  - Which cultivars exceed the target statistically\n"
+                                        "• Do not make up missing data (e.g., cooking) — acknowledge it clearly\n"
+                                        "• Do not say \"list of cultivars\" — actually name them\n"
+                                        "• Do not insert placeholders — if data is missing, say so professionally\n\n"
+                                        
+                                        "🧪 Example Response\n"
+                                        "The average yield for **Dynasty** across all locations in 2024 was **3,240 kg/ha**.\n"
+                                        "Cultivars with similar yield performance include **Red Hawk** (**3,270 kg/ha**) and **Etna** (**3,200 kg/ha**), with no statistically significant difference based on Tukey's HSD (p > 0.05).\n\n"
+                                        "Higher-performing cultivars include **OAC Rex** (**3,640 kg/ha**) and **AC Pintoba** (**3,580 kg/ha**), both significantly outperforming Dynasty at p < 0.05.\n\n"
+                                        "Cooking characteristics were not available in the dataset and could not be compared."
                                     ),
                                 },
                                 {
@@ -699,32 +833,31 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
     
     yield {"type": "progress", "data": {"step": "generation", "detail": "Synthesizing findings with AI"}}
 
-    # Stream the response
+    # Stream the response and collect it for gene extraction
+    full_response = ""
     for chunk in query_openai_stream(context, source_list, question, conversation_history, api_key):
+        full_response += chunk
         yield {"type": "content", "data": chunk}
 
-    yield {"type": "progress", "data": {"step": "genes", "detail": "Analyzing genetic elements"}}
-
-    # Get the full response for gene extraction
-    full_response = query_openai(context, source_list, question, conversation_history, api_key)
-    
-    # Extract genes from the complete answer (async-safe)
-    yield {"type": "progress", "data": {"step": "gene_extraction", "detail": "Extracting gene mentions from research text"}}
+    # Extract genes from the response
+    gene_summaries = []
+    if full_response.strip():  # Only extract if there's any content
+        yield {"type": "progress", "data": {"step": "gene_extraction", "detail": "Extracting gene mentions from research text"}}
     print("🧬 Extracting gene mentions...")
     try:
         import asyncio
         gene_mentions, db_hits, gpt_hits = await asyncio.to_thread(extract_gene_mentions, full_response, api_key)
         print(f"Found gene mentions: {gene_mentions}")
 
-        # Batch process genes for better performance
-        yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
-        gene_summaries = await asyncio.to_thread(process_genes_batch, gene_mentions)
+        if gene_mentions:  # Only process if genes were found
+            yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
+            gene_summaries = await asyncio.to_thread(process_genes_batch, gene_mentions)
     except Exception as e:
         print(f"⚠️ Gene extraction failed: {e}")
-        gene_mentions, db_hits, gpt_hits = [], set(), set()
         gene_summaries = []
 
     yield {"type": "progress", "data": {"step": "sources", "detail": "Generating research references and citations"}}
+
 
     yield {"type": "progress", "data": {"step": "finalizing", "detail": "Completing analysis"}}
 
@@ -844,6 +977,14 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     # Add transition message if needed
     if transition_message:
         final_answer = transition_message + final_answer
+
+    # Add references section to the answer
+    if confirmed_dois:
+        references_text = "\n\n---\n\n## 📚 **References**\n\n"
+        for i, doi in enumerate(confirmed_dois, 1):
+            doi_url = f"https://doi.org/{doi}" if not doi.startswith('http') else doi
+            references_text += f"[{i}] {doi} - {doi_url}\n\n"
+        final_answer += references_text
 
     # Extract genes from the complete answer
     print("🧬 Extracting gene mentions...")
