@@ -27,7 +27,7 @@ def get_zilliz_headers():
     }
 
 # --- Gene Processing Functions ---
-def process_genes_batch(gene_mentions: List[str]) -> List[Dict[str, Any]]:
+def process_genes_batch(gene_mentions: List[str], api_key: str = None) -> List[Dict[str, Any]]:
     """Batch process genes for better performance by avoiding individual lookups."""
     print(f"🧬 Batch processing {len(gene_mentions)} genes...")
     
@@ -62,12 +62,54 @@ def process_genes_batch(gene_mentions: List[str]) -> List[Dict[str, Any]]:
                     "description": uniprot_info['protein_names'] or f"UniProt Entry: {uniprot_info['entry']}"
                 })
             else:
-                # Gene not found in databases, add basic info
-                gene_summaries.append({
-                    "name": gene,
-                    "summary": f"**Literature Mention**\n\nGene identifier: {gene}\nSource: Literature mention",
-                    "source": "Literature Mention",
-                    "description": f"Gene mentioned in research literature: {gene}",
+                # Gene not found in databases, generate brief description using LLM
+                try:
+                    from utils.openai_client import create_openai_client
+                    client = create_openai_client(api_key)  # Use provided API key
+                    
+                    # Generate brief, valuable description
+                    llm_response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "You are a plant genetics expert. Generate a CONCISE, well-formatted description "
+                                    "of the gene/protein. Use this EXACT format:\n\n"
+                                    "• **Function:** [Brief function description]\n"
+                                    "• **Role:** [Plant biology role or pathway]\n"
+                                    "• **Relevance:** [Importance to *Phaseolus vulgaris* if known]\n\n"
+                                    "Keep each bullet point to 1 short sentence. Use **bold** for categories and *italics* for species names. "
+                                    "If unsure about specifics, indicate it's from literature mention. "
+                                    "Focus on the most valuable scientific information only."
+                                )
+                            },
+                            {
+                                "role": "user", 
+                                "content": f"Describe this gene/protein: {gene}"
+                            }
+                        ],
+                        temperature=0.3,
+                        max_tokens=120
+                    )
+                    
+                    brief_description = llm_response.choices[0].message.content.strip()
+                    
+                    gene_summaries.append({
+                        "name": gene,
+                                "summary": brief_description,
+                                "source": "Literature Reference",
+                                "description": brief_description,
+                                "not_found": True
+                            })
+                except Exception as e:
+                    # Fallback if LLM call fails
+                    fallback_description = f"• **Identifier:** {gene}\n• **Source:** Research literature mention\n• **Status:** Gene information not available in current databases"
+                    gene_summaries.append({
+                        "name": gene,
+                        "summary": fallback_description,
+                        "source": "Literature Reference",
+                        "description": fallback_description,
                     "not_found": True
                 })
     
@@ -624,7 +666,7 @@ async def continue_with_research_stream(question: str, conversation_history: Lis
 
         if gene_mentions:  # Only process if genes were found
             yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
-        genes = await asyncio.to_thread(process_genes_batch, gene_mentions)
+        genes = await asyncio.to_thread(process_genes_batch, gene_mentions, api_key)
     except Exception as e:
         print(f"⚠️ Gene extraction failed: {e}")
         genes = []
@@ -938,7 +980,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
 
         if gene_mentions:  # Only process if genes were found
             yield {"type": "progress", "data": {"step": "gene_processing", "detail": f"Processing {len(gene_mentions)} genetic elements"}}
-            gene_summaries = await asyncio.to_thread(process_genes_batch, gene_mentions)
+            gene_summaries = await asyncio.to_thread(process_genes_batch, gene_mentions, api_key)
     except Exception as e:
         print(f"⚠️ Gene extraction failed: {e}")
         gene_summaries = []
@@ -1101,7 +1143,7 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
         print(f"Found gene mentions: {gene_mentions}")
 
         # Batch process genes for better performance
-        gene_summaries = process_genes_batch(gene_mentions)
+        gene_summaries = process_genes_batch(gene_mentions, api_key)
     except Exception as e:
         print(f"⚠️ Gene extraction failed: {e}")
         gene_mentions, db_hits, gpt_hits = [], set(), set()

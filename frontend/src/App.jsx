@@ -1197,6 +1197,22 @@ export default function App() {
                                           </div>
                                         </a>
                                       </div>
+                                    ) : gene.source === 'Literature Reference' && gene.summary.includes('•') ? (
+                                      // Handle Literature Reference with bullet points using markdown
+                                      <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                          <span className="text-blue-700 dark:text-blue-300 text-xs font-medium uppercase tracking-wider">Literature Reference</span>
+                                        </div>
+                                        <div className="prose dark:prose-invert max-w-none prose-sm">
+                                          <ReactMarkdown 
+                                            className="text-sm text-gray-700 dark:text-slate-300 leading-relaxed"
+                                            remarkPlugins={[remarkGfm]}
+                                          >
+                                            {gene.summary}
+                                          </ReactMarkdown>
+                                        </div>
+                                      </div>
                                     ) : (
                                       // Handle text summaries (fallback)
                                       <div>
@@ -1254,7 +1270,7 @@ export default function App() {
                                        💡 Genes extracted from research literature and databases
                                      </span>
                                      <span className="text-emerald-500 dark:text-emerald-500 font-mono">
-                                       NCBI • UniProt • PlantGDB
+                                      NCBI • UniProt
                                      </span>
                                    </div>
                                  </div>
