@@ -14,13 +14,14 @@ class Settings:
     def __init__(self):
         # API Keys
         self.openai_api_key = os.getenv("OPENAI_API_KEY", None)  # Optional - users provide via UI
-        self.pinecone_api_key = self._get_required_env("PINECONE_API_KEY")
+        
+        # Zilliz Configuration
+        self.zilliz_uri = self._get_required_env("ZILLIZ_URI")
+        self.zilliz_token = self._get_required_env("ZILLIZ_TOKEN")
         
         # Model Configuration
-        self.bge_model = os.getenv("BGE_MODEL", "BAAI/bge-base-en-v1.5")
-        self.pubmedbert_model = os.getenv("PUBMEDBERT_MODEL", "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract-fulltext")
-        self.bge_index_name = os.getenv("BGE_INDEX_NAME", "bge-production")
-        self.pubmedbert_index_name = os.getenv("PUBMEDBERT_INDEX_NAME", "pubmed-production")
+        self.openai_embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
+        self.collection_name = os.getenv("ZILLIZ_COLLECTION_NAME", "research_papers")
         
         # Search Configuration
         self.top_k = int(os.getenv("TOP_K", "8"))

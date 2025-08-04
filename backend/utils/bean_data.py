@@ -158,6 +158,11 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         cultivar_context = f"Focus on these cultivars: {', '.join([str(c) for c in mentioned_cultivars])}" if mentioned_cultivars else ""
         chart_data = create_smart_chart(df, original_question, api_key, cultivar_context)
         
+        # Handle chart generation failure gracefully
+        if chart_data is None:
+            print("📊 Chart generation failed - showing text analysis only")
+            chart_data = {}
+        
         # Create a data-rich response with actual insights
         response = f"## 📊 **Bean Data Analysis**\n\n"
         

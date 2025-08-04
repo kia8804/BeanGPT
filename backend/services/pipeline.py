@@ -3,53 +3,35 @@ from dotenv import load_dotenv
 from typing import List, Tuple, Dict, Any
 import json
 import pandas as pd
-import torch
-import torch.nn.functional as F
 import numpy as np
 from pathlib import Path
 import orjson
-# Using OpenAI through wrapper to avoid proxy issues
-from pinecone import Pinecone
-from sentence_transformers import SentenceTransformer
-from transformers import AutoTokenizer, AutoModel
+from pymilvus import MilvusClient
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics.pairwise import cosine_similarity
 
 from config import settings
 from database.manager import db_manager
 from utils.ncbi_utils import extract_gene_mentions, map_to_gene_id
 from utils.bean_data import function_schema, answer_bean_query
+from utils.openai_client import create_openai_client
 
 # Load environment variables
 load_dotenv()
 
-# Initialize Pinecone
-pc = Pinecone(api_key=settings.pinecone_api_key)
+# Initialize Zilliz/Milvus client
+_milvus_client = None
 
-# --- Initialize models as None (load on first use for Railway) ---
-_bge_model = None
-_tokenizer = None
-_pub_model = None
-_device = None
-
-def get_models():
-    """Load models on first use to avoid startup timeouts."""
-    global _bge_model, _tokenizer, _pub_model, _device
-    
-    if _bge_model is None:
-        print("🔄 Loading BGE model...")
-        _bge_model = SentenceTransformer(settings.bge_model)
-        print("✅ BGE model loaded")
-    
-    if _tokenizer is None or _pub_model is None:
-        print("🔄 Loading PubMedBERT model...")
-        _tokenizer = AutoTokenizer.from_pretrained(settings.pubmedbert_model)
-        _pub_model = AutoModel.from_pretrained(settings.pubmedbert_model)
-        _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        _pub_model.to(_device).eval()
-        print("✅ PubMedBERT model loaded")
-    
-    return _bge_model, _tokenizer, _pub_model, _device
+def get_milvus_client():
+    """Initialize Milvus client on first use."""
+    global _milvus_client
+    if _milvus_client is None:
+        print("🔄 Connecting to Zilliz...")
+        _milvus_client = MilvusClient(
+            uri=settings.zilliz_uri,
+            token=settings.zilliz_token
+        )
+        print("✅ Zilliz client connected")
+    return _milvus_client
 
 # --- Gene Processing Functions ---
 def process_genes_batch(gene_mentions: List[str]) -> List[Dict[str, Any]]:
@@ -99,32 +81,25 @@ def process_genes_batch(gene_mentions: List[str]) -> List[Dict[str, Any]]:
     print(f"✅ Batch processed {len(gene_summaries)} genes")
     return gene_summaries
 
-# --- RAG Context from Pinecone Metadata ---
-def get_rag_context_from_pinecone_matches(bge_matches: dict, pub_matches: dict, top_dois: List[str]) -> Tuple[str, List[str]]:
-    """Extract context directly from Pinecone matches metadata instead of jsonl file."""
+# --- RAG Context from Zilliz Matches ---
+def get_rag_context_from_matches(matches: List[dict], top_dois: List[str]) -> Tuple[str, List[str]]:
+    """Extract context directly from Zilliz matches metadata."""
     context_blocks = []
     confirmed_dois = []
     
     # Create a lookup dictionary from all matches for quick access
     all_matches = {}
     
-    # Process BGE matches
-    for match in bge_matches.get("matches", []):
-        doi = match["metadata"].get("doi", "")
-        summary = match["metadata"].get("summary", "")
+    # Process Zilliz matches
+    for match in matches:
+        entity = match.get("entity", {})
+        doi = entity.get("doi", "")
+        summary = entity.get("summary", "")
         if doi and summary:
             clean_doi = doi.strip()
             all_matches[clean_doi] = summary
     
-    # Process PubMedBERT matches 
-    for match in pub_matches.get("matches", []):
-        doi = match["metadata"].get("doi", "")
-        summary = match["metadata"].get("summary", "")
-        if doi and summary:
-            clean_doi = doi.strip()
-            all_matches[clean_doi] = summary
-    
-    print(f"🔍 Context built with {len(all_matches)} matches from Pinecone")
+    print(f"🔍 Context built with {len(all_matches)} matches from Zilliz")
     
     # Build context blocks for the top DOIs
     context_counter = 1
@@ -150,45 +125,52 @@ def get_rag_context_from_pinecone_matches(bge_matches: dict, pub_matches: dict, 
     return "\n\n".join(context_blocks), confirmed_dois
 
 # --- Embedding Functions ---
-def mean_pooling(last_hidden_state, attention_mask):
-    mask = attention_mask.unsqueeze(-1).expand(last_hidden_state.size()).float()
-    return (last_hidden_state * mask).sum(1) / mask.sum(1)
+def embed_query_openai(query: str, api_key: str) -> List[float]:
+    """Generate embeddings using OpenAI's text-embedding-3-large model."""
+    try:
+        client = create_openai_client(api_key)
+        response = client.embeddings.create(
+            model=settings.openai_embedding_model,
+            input=query,
+            dimensions=1536  # Match your Zilliz collection dimension
+        )
+        return response.data[0].embedding
+    except Exception as e:
+        print(f"❌ Error generating OpenAI embeddings: {e}")
+        raise
 
-def embed_query_pubmedbert(query: str) -> List[float]:
-    _, tokenizer, pub_model, device = get_models()
-    encoded = tokenizer(
-        query, return_tensors="pt", padding=True, truncation=True, max_length=512
-    )
-    input_ids = encoded["input_ids"].to(device)
-    attention_mask = encoded["attention_mask"].to(device)
-    with torch.no_grad():
-        outputs = pub_model(input_ids=input_ids, attention_mask=attention_mask)
-        pooled = mean_pooling(outputs.last_hidden_state, attention_mask)
-        normalized = F.normalize(pooled, p=2, dim=1)
-        return normalized.cpu().numpy().tolist()[0]
+def query_zilliz(vector: List[float], api_key: str) -> List[dict]:
+    """Query Zilliz vector database."""
+    try:
+        client = get_milvus_client()
+        search_results = client.search(
+            collection_name=settings.collection_name,
+            data=[vector],
+            limit=settings.top_k,
+            output_fields=["doi", "summary"]
+        )
+        return search_results[0] if search_results else []
+    except Exception as e:
+        print(f"❌ Error querying Zilliz: {e}")
+        raise
 
-def query_pinecone(index_name: str, vector: List[float]):
-    return pc.Index(index_name).query(vector=vector, top_k=settings.top_k, include_metadata=True)
-
-def normalize_scores(matches):
-    scores = [m["score"] for m in matches]
+def normalize_scores(matches: List[dict]) -> Dict[str, float]:
+    """Normalize similarity scores from Zilliz matches."""
+    if not matches:
+        return {}
+    
+    scores = [m.get("distance", 0.0) for m in matches]
     if not scores or max(scores) == min(scores):
-        return {m["metadata"].get("doi", f"{m['id']}"): 0.0 for m in matches}
-    norm = MinMaxScaler().fit_transform(np.array(scores).reshape(-1, 1)).flatten()
+        return {m.get("entity", {}).get("doi", f"doc_{i}"): 0.0 for i, m in enumerate(matches)}
+    
+    # Convert distance to similarity (assuming cosine distance)
+    similarities = [1 - score for score in scores]
+    norm = MinMaxScaler().fit_transform(np.array(similarities).reshape(-1, 1)).flatten()
+    
     return {
-        m["metadata"].get("doi", f"{m['id']}"): norm[i] for i, m in enumerate(matches)
+        m.get("entity", {}).get("doi", f"doc_{i}"): norm[i] 
+        for i, m in enumerate(matches)
     }
-
-def combine_scores(bge_scores: dict, pub_scores: dict, alpha: float = settings.alpha) -> dict:
-    all_sources = set(bge_scores) | set(pub_scores)
-    combined = {}
-    for src in all_sources:
-        bge_val = bge_scores.get(src, 0.0)
-        pub_val = pub_scores.get(src, 0.0)
-        score = alpha * bge_val + (1 - alpha) * pub_val
-        if score > 0.05:
-            combined[src] = score
-    return combined
 
 # --- Question Processing ---
 def is_genetics_question(question: str, api_key: str) -> bool:
@@ -526,27 +508,24 @@ async def continue_with_research_stream(question: str, conversation_history: Lis
     
     yield {"type": "progress", "data": {"step": "embeddings", "detail": "Processing semantic embeddings"}}
     
-    bge_model, _, _, _ = get_models()
-    bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
-    pub_vec = embed_query_pubmedbert(question)
+    # Generate embeddings using OpenAI
+    embedding_vector = embed_query_openai(question, api_key)
     
     yield {"type": "progress", "data": {"step": "search", "detail": "Searching literature database"}}
     
-    bge_res = query_pinecone(settings.bge_index_name, bge_vec)
-    pub_res = query_pinecone(settings.pubmedbert_index_name, pub_vec)
+    # Query Zilliz vector database
+    matches = query_zilliz(embedding_vector, api_key)
 
-    bge_scores = normalize_scores(bge_res["matches"])
-    pub_scores = normalize_scores(pub_res["matches"])
-    combined_scores = combine_scores(bge_scores, pub_scores)
-
-    top_sources = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:settings.top_k]
+    # Get scores and extract DOIs
+    scores = normalize_scores(matches)
+    top_sources = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:settings.top_k]
     top_dois = [src for src, _ in top_sources]
     
     yield {"type": "progress", "data": {"step": "papers", "detail": f"Found {len(top_dois)} relevant papers"}}
     
-    print("🔎 Top DOIs from Pinecone:", top_dois)
+    print("🔎 Top DOIs from Zilliz:", top_dois)
 
-    context, source_list = get_rag_context_from_pinecone_matches(bge_res, pub_res, top_dois)
+    context, source_list = get_rag_context_from_matches(matches, top_dois)
     
     yield {"type": "progress", "data": {"step": "generation", "detail": "Synthesizing findings with AI"}}
 
@@ -578,15 +557,7 @@ async def continue_with_research_stream(question: str, conversation_history: Lis
 
     yield {"type": "progress", "data": {"step": "sources", "detail": "Generating research references and citations"}}
 
-    # Add references section to the content
-    if source_list:
-        references_text = "\n\n---\n\n## 📚 **References**\n\n"
-        for i, doi in enumerate(source_list, 1):
-            doi_url = f"https://doi.org/{doi}" if not doi.startswith('http') else doi
-            references_text += f"[{i}] {doi} - {doi_url}\n\n"
-        
-        for char in references_text:
-            yield {"type": "content", "data": char}
+    # References will be handled by metadata - don't duplicate them in content
 
     yield {"type": "progress", "data": {"step": "finalizing", "detail": "Completing analysis"}}
 
@@ -631,6 +602,9 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
     
     yield {"type": "progress", "data": {"step": "analysis", "detail": "Analyzing question type"}}
 
+    # Flag to determine if we should proceed to literature search
+    should_search_literature = is_genetic
+    
     if not is_genetic:
         yield {"type": "progress", "data": {"step": "dataset", "detail": "Checking cultivar database"}}
         
@@ -734,7 +708,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "✅ PERMITTED BEHAVIOR\n"
                                         "• You may compare cultivars based on numeric traits (e.g., similar yield or maturity)\n"
                                         "• You may list top-performing cultivars that outperform a target cultivar in the same class\n"
-                                        "• If cooking characteristics are not in the dataset, say so\n"
+                                        "• Only mention data that is NOT in the dataset if the user specifically asks for it\n"
                                         "• Use explicit values and clearly state which cultivars are statistically similar or superior\n\n"
                                         
                                         "📌 OUTPUT RULES\n"
@@ -743,7 +717,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "  - Mean yield (kg/ha), maturity (days), rankings, and significant differences\n"
                                         "  - Which cultivars are similar in yield/maturity to the target cultivar\n"
                                         "  - Which cultivars exceed the target statistically\n"
-                                        "• Do not make up missing data (e.g., cooking) — acknowledge it clearly\n"
+                                        "• Do not mention missing data unless specifically asked\n"
                                         "• Do not say \"list of cultivars\" — actually name them\n"
                                         "• Do not insert placeholders — if data is missing, say so professionally\n\n"
                                         
@@ -751,7 +725,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "The average yield for **Dynasty** across all locations in 2024 was **3,240 kg/ha**.\n"
                                         "Cultivars with similar yield performance include **Red Hawk** (**3,270 kg/ha**) and **Etna** (**3,200 kg/ha**), with no statistically significant difference based on Tukey's HSD (p > 0.05).\n\n"
                                         "Higher-performing cultivars include **OAC Rex** (**3,640 kg/ha**) and **AC Pintoba** (**3,580 kg/ha**), both significantly outperforming Dynasty at p < 0.05.\n\n"
-                                        "Cooking characteristics were not available in the dataset and could not be compared."
+                                        "Statistical significance was determined using standard ANOVA methods."
                                     ),
                                 },
                                 {
@@ -788,48 +762,87 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                     else:
                         # No data found, fall back to literature search
                         yield {"type": "progress", "data": {"step": "fallback", "detail": "No data found, searching literature"}}
+                        should_search_literature = True
                         bean_chart_data = {}
                         bean_full_md = ""
             else:
+                # Bean keywords found but no function call - proceed to literature search
                 yield {"type": "progress", "data": {"step": "generation", "detail": "Proceeding to literature search"}}
+                should_search_literature = True
                 
                 # Add transition to literature search
                 transition_text = "\n\n## 📚 **Research Literature Search**\n\nSearching scientific publications for relevant information...\n\n"
                 for char in transition_text:
                     yield {"type": "content", "data": char}
         else:
-            # No bean keywords, proceed directly to research papers
-            yield {"type": "progress", "data": {"step": "generation", "detail": "Proceeding to literature search"}}
+            # No bean keywords and not genetics - provide simple conversational response
+            yield {"type": "progress", "data": {"step": "generation", "detail": "Generating response"}}
             
-            # Add transition to literature search
-            transition_text = "\n\n## 📚 **Research Literature Search**\n\nSearching scientific publications for relevant information...\n\n"
-            for char in transition_text:
+            # Simple conversational response for non-genetics, non-bean questions
+            conversation_messages = [
+                {
+                    "role": "system", 
+                    "content": "You are a helpful dry bean research assistant. Provide a brief, friendly response to casual questions. For research questions, mention that you can help with bean breeding data and genetics literature."
+                }
+            ]
+            
+            if conversation_history:
+                conversation_messages.extend(conversation_history)
+            conversation_messages.append({"role": "user", "content": question})
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=conversation_messages,
+                temperature=0.7,
+                max_tokens=200
+            )
+            
+            simple_response = response.choices[0].message.content.strip()
+            
+            # Stream the response
+            for char in simple_response:
                 yield {"type": "content", "data": char}
+            
+            # Send completion metadata
+            yield {
+                "type": "metadata",
+                "data": {
+                    "sources": [],
+                    "genes": [],
+                    "full_markdown_table": "",
+                    "suggested_questions": [
+                        "What bean varieties perform best in Ontario?",
+                        "Show me yield data for black beans",
+                        "What genes are involved in disease resistance?"
+                    ]
+                }
+            }
+            return  # Stop here - no literature search for simple conversational questions
 
-    # --- Continue with research literature search for all non-bean-data cases ---
+    # --- Continue with research literature search if needed ---
+    if not should_search_literature:
+        return  # Exit if we don't need literature search
+    
     yield {"type": "progress", "data": {"step": "embeddings", "detail": "Processing semantic embeddings"}}
     
-    bge_model, _, _, _ = get_models()
-    bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
-    pub_vec = embed_query_pubmedbert(question)
+    # Generate embeddings using OpenAI
+    embedding_vector = embed_query_openai(question, api_key)
     
     yield {"type": "progress", "data": {"step": "search", "detail": "Searching literature database"}}
     
-    bge_res = query_pinecone(settings.bge_index_name, bge_vec)
-    pub_res = query_pinecone(settings.pubmedbert_index_name, pub_vec)
+    # Query Zilliz vector database
+    matches = query_zilliz(embedding_vector, api_key)
 
-    bge_scores = normalize_scores(bge_res["matches"])
-    pub_scores = normalize_scores(pub_res["matches"])
-    combined_scores = combine_scores(bge_scores, pub_scores)
-
-    top_sources = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:settings.top_k]
+    # Get scores and extract DOIs
+    scores = normalize_scores(matches)
+    top_sources = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:settings.top_k]
     top_dois = [src for src, _ in top_sources]
     
     yield {"type": "progress", "data": {"step": "papers", "detail": f"Found {len(top_dois)} relevant papers"}}
     
-    print("🔎 Top DOIs from Pinecone:", top_dois)
+    print("🔎 Top DOIs from Zilliz:", top_dois)
 
-    context, source_list = get_rag_context_from_pinecone_matches(bge_res, pub_res, top_dois)
+    context, source_list = get_rag_context_from_matches(matches, top_dois)
     
     yield {"type": "progress", "data": {"step": "generation", "detail": "Synthesizing findings with AI"}}
 
@@ -880,8 +893,9 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     from utils.openai_client import create_openai_client
     client = create_openai_client(api_key)
     
-    # Initialize transition_message
+    # Initialize transition_message and literature search flag
     transition_message = ""
+    should_search_literature = is_genetic
 
     if not is_genetic:
         # Check for bean data keywords - broader detection for data analysis
@@ -931,42 +945,62 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
                         else:
                             # Fallback to research papers with transition message
                             transition_message = "## 🔍 **Dataset Search Results**\n\nNo specific data found in our cultivar performance dataset for this query.\n\n---\n\n## 📚 **Research Literature Search**\n\nSearching scientific publications for relevant information...\n\n"
+                            should_search_literature = True
                             print("🔄 Bean data insufficient, falling back to research papers...")
                 else:
                     # GPT decided not to use function, add transition message
                     transition_message = "## 📚 **Research Literature Search**\n\nSearching scientific publications for relevant information...\n\n"
+                    should_search_literature = True
                     
             except Exception as e:
                 print(f"❌ Bean data query failed: {e}")
                 # Error fallback with transition message
                 transition_message = "## 🔍 **Dataset Search**\n\nEncountered an issue accessing the cultivar dataset.\n\n---\n\n## 📚 **Research Literature Search**\n\nSearching scientific publications for relevant information...\n\n"
+                should_search_literature = True
         else:
-            # No bean keywords, proceed directly to research papers
-            transition_message = ""
-    else:
-        # Genetics question, no transition needed
-        transition_message = ""
+            # No bean keywords and not genetics - provide simple conversational response
+            conversation_messages = [
+                {
+                    "role": "system", 
+                    "content": "You are a helpful dry bean research assistant. Provide a brief, friendly response to casual questions. For research questions, mention that you can help with bean breeding data and genetics literature."
+                }
+            ]
+            
+            if conversation_history:
+                conversation_messages.extend(conversation_history)
+            conversation_messages.append({"role": "user", "content": question})
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=conversation_messages,
+                temperature=0.7,
+                max_tokens=200
+            )
+            
+            simple_response = response.choices[0].message.content.strip()
+            
+            # Return simple response without literature search
+            return simple_response, [], [], ""
 
     # --- RAG pipeline for research papers ---
+    if not should_search_literature:
+        return "I can help with bean breeding data and genetics literature. Please ask a specific question!", [], [], ""
     print("🔬 Proceeding with research paper search...")
-    bge_model, _, _, _ = get_models()
-    bge_vec = bge_model.encode(question, normalize_embeddings=True).tolist()
-    pub_vec = embed_query_pubmedbert(question)
     
-    print("🔎 Querying Pinecone...")
-    bge_matches = query_pinecone(settings.bge_index_name, bge_vec)
-    pub_matches = query_pinecone(settings.pubmedbert_index_name, pub_vec)
-    print("✅ Pinecone queries completed.")
+    # Generate embeddings using OpenAI
+    embedding_vector = embed_query_openai(question, api_key)
+    
+    print("🔎 Querying Zilliz...")
+    matches = query_zilliz(embedding_vector, api_key)
+    print("✅ Zilliz queries completed.")
 
-    bge_scores = normalize_scores(bge_matches["matches"])
-    pub_scores = normalize_scores(pub_matches["matches"])
-    combined_scores = combine_scores(bge_scores, pub_scores)
-
-    top_sources = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)[:settings.top_k]
+    # Get scores and extract DOIs
+    scores = normalize_scores(matches)
+    top_sources = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:settings.top_k]
     top_dois = [src for src, _ in top_sources]
-    print("🔎 Top DOIs from Pinecone:", top_dois)
+    print("🔎 Top DOIs from Zilliz:", top_dois)
 
-    combined_context, confirmed_dois = get_rag_context_from_pinecone_matches(bge_matches, pub_matches, top_dois)
+    combined_context, confirmed_dois = get_rag_context_from_matches(matches, top_dois)
     if not combined_context.strip():
         print("⚠️ No RAG matches found for top DOIs.")
         return "No matching papers found in RAG corpus.", top_dois, [], ""

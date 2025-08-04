@@ -25,22 +25,25 @@ async def readiness_check() -> Dict[str, Any]:
     Readiness check - verifies core dependencies are available.
     """
     try:
-        # Check if we can connect to Pinecone without importing models
-        from pinecone import Pinecone
+        # Check if we can connect to Zilliz
+        from pymilvus import MilvusClient
         from config import settings
         
-        pc = Pinecone(api_key=settings.pinecone_api_key)
+        client = MilvusClient(
+            uri=settings.zilliz_uri,
+            token=settings.zilliz_token
+        )
         # Simple connection test
-        pc.list_indexes()
+        client.list_collections()
         
         return {
             "status": "ready",
             "message": "All systems operational",
-            "pinecone": "connected"
+            "zilliz": "connected"
         }
     except Exception as e:
         return {
             "status": "not_ready", 
             "message": f"Service dependency error: {str(e)}",
-            "pinecone": "error"
+            "zilliz": "error"
         }

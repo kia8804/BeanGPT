@@ -78,13 +78,25 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
     system_msg = (
         "CRITICAL INSTRUCTION: Output ONLY executable Python code. No explanations, no text, no markdown formatting, no comments about what you're doing.\n\n"
         
-        "You are a dynamic chart generator capable of creating ANY type of visualization. Generate ONLY raw Python code that:\n"
+        "You are an INTELLIGENT chart generator that creates MEANINGFUL visualizations. Generate ONLY raw Python code that:\n"
         "- Uses the existing DataFrame `df` (never create sample data or overwrite df)\n"
         "- ALWAYS check if columns exist before using them\n"
         "- ALWAYS check if values exist in columns before filtering\n"
         "- If requested data doesn't exist, create a chart with available data and informative title\n"
         "- When user requests global/world/country data but only local data is available, create a clear table showing the data limitation\n"
-        "- Creates exactly ONE Plotly figure assigned to variable `fig`\n" 
+        "- Creates exactly ONE Plotly figure assigned to variable `fig`\n"
+        "\n"
+        "🚨 CRITICAL CHART INTELLIGENCE RULES:\n"
+        "- NEVER create single-value charts (1 bar, 1 point, etc.) - they are USELESS\n"
+        "- If user asks about specific cultivars, ALWAYS add comparative context:\n"
+        "  * Compare to other cultivars in same bean type\n"
+        "  * Compare to overall averages\n"
+        "  * Show trends over time if years available\n"
+        "  * Compare performance across locations\n"
+        "- For yield questions: show top performers vs requested cultivars\n"
+        "- For single cultivar questions: show it alongside 5-10 similar cultivars\n"
+        "- Make charts tell a STORY, not just show isolated data points\n"
+        "- Add context like 'vs. average', 'vs. top performers', 'over time'\n\n" 
         "- Uses plotly.graph_objects as go and plotly.express as px\n"
         "- Never calls fig.show()\n"
         "- Includes professional styling with update_layout()\n"
@@ -172,6 +184,42 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
         "    fig = go.Figure()\n"
         "    fig.add_annotation(text='Missing bean_type or Yield columns', x=0.5, y=0.5)\n"
         "    fig.update_layout(title='Missing Required Data', height=450, width=900)\n\n"
+        
+        "EXAMPLE - Smart comparative chart (NOT single-value):\n"
+        "# If user asks about Black Velvet yield, don't show just 1 bar!\n"
+        "# Instead, show it compared to other black bean cultivars\n"
+        "print('Available columns:', df.columns.tolist())\n"
+        "\n"
+        "target_cultivar = 'Black Velvet'  # Extract from user request\n"
+        "if 'Cultivar Name' in df.columns and 'Yield' in df.columns and 'bean_type' in df.columns:\n"
+        "    # Get black bean cultivars (stored as 'coloured bean')\n"
+        "    black_beans = df[df['bean_type'] == 'coloured bean']\n"
+        "    black_cultivars = black_beans['Cultivar Name'].unique()\n"
+        "    \n"
+        "    if len(black_cultivars) > 1:\n"
+        "        # Calculate average yield per cultivar\n"
+        "        avg_yields = black_beans.groupby('Cultivar Name')['Yield'].mean().reset_index()\n"
+        "        avg_yields = avg_yields.sort_values('Yield', ascending=False)\n"
+        "        \n"
+        "        # Highlight the target cultivar\n"
+        "        colors = ['red' if x == target_cultivar else 'lightblue' for x in avg_yields['Cultivar Name']]\n"
+        "        \n"
+        "        fig = go.Figure(data=[go.Bar(\n"
+        "            x=avg_yields['Cultivar Name'],\n"
+        "            y=avg_yields['Yield'],\n"
+        "            marker=dict(color=colors, line=dict(color='black', width=1))\n"
+        "        )])\n"
+        "        fig.update_layout(\n"
+        "            title=f'{target_cultivar} vs Other Black Bean Cultivars - Average Yield',\n"
+        "            xaxis_title='Cultivar',\n"
+        "            yaxis_title='Average Yield (kg/ha)',\n"
+        "            height=450, width=900\n"
+        "        )\n"
+        "    else:\n"
+        "        # Not enough cultivars for comparison, return None for text-only\n"
+        "        fig = None\n"
+        "else:\n"
+        "    fig = None\n\n"
         
         "EXAMPLE - Dynamic table generation with dark mode support:\n"
         "# Create a summary table with available data\n"
@@ -410,8 +458,10 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
         {"role": "user", "content": f"Dataset info:\n- Columns: {cols}\n- Numeric columns: {num_cols}\n- Categorical columns: {categorical_cols}\n- Date columns: {date_cols}"},
         {"role": "user", "content": f"Sample categorical values: {categorical_info}"},
         {"role": "user", "content": f"Sample data (first 3 rows): {rows[:3]}"},
+        {"role": "user", "content": "CRITICAL BEAN TYPE MAPPING: In this dataset, 'black beans' are stored as 'coloured bean' in the bean_type column. When filtering for black beans, use bean_type == 'coloured bean' OR filter by cultivar names that contain 'black'."},
         {"role": "user", "content": f"User request: {prompt}"},
         {"role": "user", "content": "CRITICAL: Extract any cultivar names mentioned in the user request and use them in your analysis"},
+        {"role": "user", "content": "🚨 ABSOLUTE RULE: If your chart would only show 1 data point (1 bar, 1 value, etc.), set fig = None instead. Single-value charts are USELESS and FORBIDDEN."},
         {"role": "user", "content": "RESPOND WITH ONLY PYTHON CODE - NO EXPLANATORY TEXT"},
     ]
 
@@ -460,49 +510,40 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
         
         # Check if any filtered dataframes in the code resulted in empty data
         for var_name, var_value in local_ns.items():
-            if isinstance(var_value, pd.DataFrame) and var_name.endswith('_df') and var_value.empty:
+            if isinstance(var_value, pd.DataFrame) and var_name.endswith('_data') and var_value.empty:
                 print(f"⚠️ Warning: {var_name} is empty after filtering")
                 
                 # Provide debugging information
                 print("🔍 Available data for debugging:")
                 if 'bean_type' in df.columns:
-                    print(f"  Bean types: {df['bean_type'].unique()}")
+                    bean_types = df['bean_type'].unique()
+                    print(f"  Bean types: {bean_types}")
+                    # Check for black bean entries specifically
+                    black_related = [bt for bt in bean_types if bt and ('black' in str(bt).lower() or 'colour' in str(bt).lower())]
+                    if black_related:
+                        print(f"  Black/Coloured bean types found: {black_related}")
                 if 'Cultivar Name' in df.columns:
-                    print(f"  Cultivars: {df['Cultivar Name'].unique()[:10]}...")
+                    all_cultivars = df['Cultivar Name'].unique()
+                    print(f"  Total cultivars: {len(all_cultivars)}")
+                    # Check for black-related cultivars
+                    black_cultivars = [c for c in all_cultivars if c and 'black' in str(c).lower()]
+                    if black_cultivars:
+                        print(f"  Black cultivars found: {black_cultivars[:10]}")
                 if 'Year' in df.columns:
                     print(f"  Years: {sorted(df['Year'].unique())}")
                 
-                # Create an informative error figure with helpful context
-                available_info = []
-                if 'bean_type' in df.columns:
-                    available_info.append(f"Available bean types: {', '.join(df['bean_type'].unique())}")
-                if 'Cultivar Name' in df.columns:
-                    cultivar_count = len(df['Cultivar Name'].unique())
-                    available_info.append(f"Available cultivars: {cultivar_count} varieties")
-                if 'Year' in df.columns:
-                    years = sorted(df['Year'].unique())
-                    available_info.append(f"Available years: {min(years)}-{max(years)}")
-                
-                fig = go.Figure()
-                error_text = "No data found matching the specified criteria.<br><br>"
-                error_text += "<br>".join(available_info)
-                error_text += "<br><br>Tip: Navy beans are stored as 'White Bean' in this dataset."
-                
-                fig.add_annotation(
-                    text=error_text,
-                    xref="paper", yref="paper", x=0.5, y=0.5,
-                    showarrow=False, font=dict(size=14, color="red")
-                )
-                fig.update_layout(
-                    title="No Data Found - Check Filter Criteria",
-                    xaxis=dict(visible=False),
-                    yaxis=dict(visible=False),
-                    height=450, width=900
-                )
-                return fig
+                # Don't create error chart - return None to gracefully degrade to text-only
+                print("⚠️ Chart generation failed: No data found after filtering")
+                print("💡 Returning None - will show text analysis only")
+                return None
         
         # Preferred: a variable named `fig`
         fig = local_ns.get("fig") or safe_globals.get("fig")
+        
+        # Check if LLM deliberately set fig = None (smart chart prevention)
+        if fig is None and "fig" in local_ns:
+            print("💡 LLM deliberately set fig = None - preventing useless chart")
+            return None
 
         # Fallback: first Figure object we can find
         if fig is None:
@@ -512,7 +553,9 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
                     break
 
         if not isinstance(fig, go.Figure):
-            raise DataProcessingError("No plotly Figure was produced.")
+            print("⚠️ Chart generation failed: No valid Plotly Figure produced")
+            print("💡 Returning None - will show text analysis only")
+            return None
         
         # Check if the figure has any data traces (handle all chart types)
         has_data = False
@@ -541,20 +584,31 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
                     break
         
         if not has_data:
-            print("⚠️ Warning: Generated figure has no data points")
-            # Create an informative error figure
-            fig = go.Figure()
-            fig.add_annotation(
-                text="No data points to display.<br>The filtering criteria may be too restrictive or the requested data may not exist in this dataset.",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font=dict(size=16, color="orange")
-            )
-            fig.update_layout(
-                title="No Data Points Found",
-                xaxis=dict(visible=False),
-                yaxis=dict(visible=False),
-                height=450, width=900
-            )
+            print("⚠️ Chart generation failed: No data found after filtering")
+            print("💡 Returning None - will show text analysis only")
+            return None
+        
+        # Check for single-value charts (useless visualizations)
+        single_value_chart = False
+        total_data_points = 0
+        
+        for trace in fig.data:
+            trace_points = 0
+            # Count data points in different chart types
+            if hasattr(trace, 'x') and trace.x is not None:
+                trace_points = len(trace.x)
+            elif hasattr(trace, 'y') and trace.y is not None:
+                trace_points = len(trace.y)
+            elif hasattr(trace, 'values') and trace.values is not None:
+                trace_points = len(trace.values)
+            
+            total_data_points += trace_points
+        
+        # If chart only shows 1 data point total, it's useless
+        if total_data_points <= 1:
+            print("⚠️ Chart generation failed: Single-value chart detected (useless)")
+            print("💡 Returning None - will show text analysis only")
+            return None
         
         return fig
 
@@ -601,6 +655,11 @@ def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, contex
         # Execute the code to create the figure
         fig = run_generated_code(code, df)
         
+        # Handle chart generation failure gracefully
+        if fig is None:
+            print("📊 Chart generation failed - returning None for graceful degradation")
+            return None
+        
         # Convert to JSON for frontend
         fig_json = fig.to_json()
         
@@ -627,6 +686,8 @@ def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, contex
                 fixed_prompt = f"{prompt}\n\nIMPORTANT: For bar charts, DO NOT use 'size' property in marker dict. Use only 'color' and 'line' properties."
                 fixed_code = generate_plotly_code(client, fixed_prompt, df)
                 fig = run_generated_code(fixed_code, df)
+                if fig is None:
+                    raise Exception("Chart generation returned None after bar chart fix attempt")
                 fig_json = fig.to_json()
                 
                 chart_title = "Data Visualization"
@@ -660,6 +721,8 @@ def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, contex
                 fixed_prompt = f"{prompt}\n\nCRITICAL: DO NOT use DataFrame.append() method (deprecated). Use pd.concat() instead. Example: pd.concat([df1, df2], ignore_index=True)"
                 fixed_code = generate_plotly_code(client, fixed_prompt, df)
                 fig = run_generated_code(fixed_code, df)
+                if fig is None:
+                    raise Exception("Chart generation returned None after pandas fix attempt")
                 fig_json = fig.to_json()
                 
                 chart_title = "Data Visualization"
@@ -683,6 +746,8 @@ def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, contex
                 fixed_prompt = f"{prompt}\n\nCRITICAL: Initialize ALL variables outside if-blocks to avoid NameError. Example: var = None (before if-block), then set var = value (inside if-block)."
                 fixed_code = generate_plotly_code(client, fixed_prompt, df)
                 fig = run_generated_code(fixed_code, df)
+                if fig is None:
+                    raise Exception("Chart generation returned None after scoping fix attempt")
                 fig_json = fig.to_json()
                 
                 chart_title = "Data Visualization"
@@ -698,9 +763,6 @@ def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, contex
             except Exception as retry_error:
                 error_msg = f"Chart generation failed even after scoping fix attempt: {str(retry_error)}"
         
-        print(f"Error creating chart: {error_msg}")
-        return {
-            "type": "error",
-            "error": f"Failed to generate chart: {error_msg}",
-            "title": "Chart Generation Error"
-        } 
+        print(f"📊 Chart generation failed: {error_msg}")
+        print("💡 Returning None - will show text analysis only")
+        return None 

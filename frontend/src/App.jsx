@@ -800,7 +800,7 @@ export default function App() {
               <div className={`p-4 rounded-lg ${darkMode ? 'bg-slate-800' : 'bg-gray-50'}`}>
                 <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-2">Research Platform</h4>
                 <p className="text-xs text-gray-600 dark:text-slate-400 leading-relaxed mb-3">
-                  BeanGPT is an AI-powered research platform for dry bean genetics and breeding analysis, 
+                  BeanGPT is an AI-powered research platform for dry bean breeding and computational biology, 
                   developed to support sustainable agriculture and breeding research.
                 </p>
                 
@@ -833,7 +833,7 @@ export default function App() {
                   <div>
                     <p className="text-xs font-medium text-gray-700 dark:text-slate-300">Research Paper:</p>
                     <p className="text-xs text-gray-600 dark:text-slate-400">
-                      "AI-Driven Analysis Platform for Dry Bean Genetics and Performance Data"
+                      Currently under review
                     </p>
                   </div>
                 </div>
