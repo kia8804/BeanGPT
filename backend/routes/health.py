@@ -25,23 +25,35 @@ async def readiness_check() -> Dict[str, Any]:
     Readiness check - verifies core dependencies are available.
     """
     try:
-        # Check if we can connect to Zilliz
-        from pymilvus import MilvusClient
+        # Check if we can connect to Zilliz Cloud
+        import requests
         from config import settings
         
-        client = MilvusClient(
-            uri=settings.zilliz_uri,
-            token=settings.zilliz_token
-        )
-        # Simple connection test
-        collections = client.list_collections()
-        
-        return {
-            "status": "ready",
-            "message": "All systems operational",
-            "zilliz": "connected",
-            "collections": len(collections)
+        # Test connection with list collections endpoint
+        api_url = f"{settings.zilliz_uri.rstrip('/')}/v1/vector/collections"
+        headers = {
+            "Authorization": f"Bearer {settings.zilliz_token}",
+            "Content-Type": "application/json"
         }
+        
+        response = requests.get(api_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            result = response.json()
+            collections = result.get("data", [])
+            return {
+                "status": "ready",
+                "message": "All systems operational",
+                "zilliz": "connected",
+                "collections": len(collections)
+            }
+        else:
+            return {
+                "status": "not_ready",
+                "message": f"Zilliz API error: {response.status_code}",
+                "zilliz": "error"
+            }
+        
     except Exception as e:
         return {
             "status": "not_ready", 
