@@ -3,7 +3,7 @@ import {
   FaDna, FaFlask, FaMoon, FaSun, FaPaperPlane, FaSpinner, 
   FaChevronDown, FaChevronUp, FaHistory, FaBookmark, 
   FaSearch, FaChartBar, FaDatabase, FaFileAlt, FaMicroscope,
-  FaCaretRight, FaExternalLinkAlt, FaClipboard
+  FaCaretRight, FaExternalLinkAlt, FaClipboard, FaBook, FaTimes
 } from 'react-icons/fa';
 import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
@@ -69,6 +69,7 @@ export default function App() {
   const chatEndRef = useRef(null);
   const [showSuggestedQuestions, setShowSuggestedQuestions] = useState({});
   const [showGenePanel, setShowGenePanel] = useState({});
+  const [showResourcesModal, setShowResourcesModal] = useState(false);
   const [userApiKey, setUserApiKey] = useState('');
   const [apiKeyStatus, setApiKeyStatus] = useState('none'); // 'none', 'valid', 'invalid'
 
@@ -717,7 +718,7 @@ export default function App() {
 
   const quickActions = [
     { icon: FaSearch, label: "Gene Lookup", action: () => setInput("Tell me about resistance genes in dry beans") },
-    { icon: FaFileAlt, label: "Literature", action: () => setInput("Find recent papers on dry bean breeding") }
+    { icon: FaBook, label: "Resources", action: () => setShowResourcesModal(true) }
   ];
 
   // Helper function to check if text contains inline citations
@@ -1614,7 +1615,216 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Resources Modal */}
+      {showResourcesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 p-6 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    🧬 Dry Bean Research Resources
+                  </h2>
+                  <p className="text-gray-600 dark:text-slate-400 mt-2">
+                    Comprehensive collection of genomics, breeding, and research tools for <em>Phaseolus vulgaris</em>
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowResourcesModal(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <FaTimes className="text-gray-500 dark:text-slate-400" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-8">
+              
+              {/* Phaseolus Genomics & Breeding Resources */}
+              <div className="space-y-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                <h3 className="text-xl font-semibold text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
+                  🧬 Phaseolus Genomics & Breeding Resources
+                </h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <ResourceCard
+                    title="Phytozome (JGI)"
+                    description="Genome portal hosting Phaseolus vulgaris reference genomes (e.g., G19833), annotations, and gene families"
+                    link="https://phytozome-next.jgi.doe.gov"
+                  />
+                  <ResourceCard
+                    title="LegumeInfo (USDA)"
+                    description="Comprehensive portal for Phaseolus, Glycine, and other legumes: gene data, maps, synteny, traits"
+                    link="https://legumeinfo.org"
+                  />
+                  <ResourceCard
+                    title="Bean Mine (NCGR)"
+                    description="Custom database for dry bean genetics and genomics, part of InterMine"
+                    link="https://mines.legumeinfo.org/beanmine"
+                  />
+                  <ResourceCard
+                    title="PhaseolusGenes"
+                    description="Specialized database for gene expression, co-expression networks, and gene functional annotations in P. vulgaris"
+                    link="https://phaseolusgenes.scinet.usda.gov"
+                  />
+                </div>
+              </div>
+
+              {/* Trait & QTL Databases */}
+              <div className="space-y-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <h3 className="text-xl font-semibold text-blue-800 dark:text-blue-200 flex items-center gap-2">
+                  🔬 Trait & QTL Databases
+                </h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <ResourceCard
+                    title="SoyBase/LegumeBase QTL Viewer"
+                    description="Although built for soybean, contains transferable tools and synteny-based QTL maps for Phaseolus"
+                    link="https://www.soybase.org/"
+                  />
+                  <ResourceCard
+                    title="QTLBase (multi-species)"
+                    description="Repository of QTLs and associated traits across crops; can filter by species"
+                    link="https://ngdc.cncb.ac.cn/qtlbase"
+                  />
+                </div>
+              </div>
+
+              {/* Gene Function & Expression */}
+              <div className="space-y-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                <h3 className="text-xl font-semibold text-purple-800 dark:text-purple-200 flex items-center gap-2">
+                  📚 Gene Function & Expression
+                </h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <ResourceCard
+                    title="Ensembl Plants"
+                    description="Search Phaseolus vulgaris gene IDs, protein domains, orthologs, and variants"
+                    link="https://plants.ensembl.org/Phaseolus_vulgaris"
+                  />
+                  <ResourceCard
+                    title="NCBI Gene & GEO"
+                    description="Gene function summaries, expression profiles, and related literature"
+                    link="https://www.ncbi.nlm.nih.gov/gene"
+                  />
+                  <ResourceCard
+                    title="ePlant for Legumes"
+                    description="Interactive visualization tools for gene expression, co-expression, and protein–protein interaction networks"
+                    link="https://bar.utoronto.ca/eplant_legumes"
+                  />
+                </div>
+              </div>
+
+              {/* Breeding & Germplasm Resources */}
+              <div className="space-y-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                <h3 className="text-xl font-semibold text-green-800 dark:text-green-200 flex items-center gap-2">
+                  🌱 Breeding & Germplasm Resources
+                </h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <ResourceCard
+                    title="CIAT Genetic Resources Unit"
+                    description="Global Phaseolus germplasm bank and breeding materials"
+                    link="https://ciat.cgiar.org/what-we-do/genetic-resources"
+                  />
+                  <ResourceCard
+                    title="USDA GRIN Global"
+                    description="Germplasm search tool for P. vulgaris and other species"
+                    link="https://npgsweb.ars-grin.gov"
+                  />
+                  <ResourceCard
+                    title="International Treaty on Plant Genetic Resources (Genesys)"
+                    description="Global portal for passport data and genebank accessions"
+                    link="https://www.genesys-pgr.org"
+                  />
+                </div>
+              </div>
+
+              {/* Literature & Research Discovery */}
+              <div className="space-y-4 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
+                <h3 className="text-xl font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-2">
+                  🧠 Literature & Research Discovery
+                </h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <ResourceCard
+                    title="PubMed"
+                    description="Search dry bean molecular biology and breeding papers"
+                    link="https://pubmed.ncbi.nlm.nih.gov"
+                  />
+                  <ResourceCard
+                    title="Google Scholar – Phaseolus vulgaris"
+                    description="Curated papers tagged with Phaseolus vulgaris"
+                    link="https://scholar.google.com/scholar?q=Phaseolus+vulgaris"
+                  />
+                  <ResourceCard
+                    title="CABI Abstracts"
+                    description="Global agriculture and plant science literature database"
+                    link="https://www.cabi.org"
+                  />
+                </div>
+              </div>
+
+              {/* Tools for Computational Researchers */}
+              <div className="space-y-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-200 dark:border-slate-700">
+                <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  💻 Tools for Computational Researchers
+                </h3>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <ResourceCard
+                    title="Galaxy for Plant Science"
+                    description="Web-based platform for accessible, reproducible, and collaborative research"
+                    link="https://usegalaxy.org"
+                  />
+                  <ResourceCard
+                    title="CoGe Genome Visualization"
+                    description="Comparative genomics platform for visualization and analysis"
+                    link="https://genomevolution.org/coge"
+                  />
+                  <ResourceCard
+                    title="BLAST at NCBI"
+                    description="Basic Local Alignment Search Tool for sequence analysis"
+                    link="https://blast.ncbi.nlm.nih.gov/Blast.cgi"
+                  />
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-gray-50 dark:bg-slate-700 p-4 rounded-b-xl border-t border-gray-200 dark:border-slate-600">
+              <div className="text-center text-sm text-gray-600 dark:text-slate-400">
+                <p>Need more resources? Contact our research team or suggest additions to improve this collection.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+// ResourceCard Component
+const ResourceCard = ({ title, description, link }) => {
+  const handleClick = () => {
+    window.open(link, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <div 
+      onClick={handleClick}
+      className="p-4 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all cursor-pointer group"
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex-1">
+          <h4 className="font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            {title}
+          </h4>
+          <p className="text-sm text-gray-600 dark:text-slate-400 mt-1 leading-relaxed">
+            {description}
+          </p>
+        </div>
+        <FaExternalLinkAlt className="text-gray-400 group-hover:text-blue-500 mt-1 ml-2 flex-shrink-0" />
+      </div>
+    </div>
+  );
+};
  
