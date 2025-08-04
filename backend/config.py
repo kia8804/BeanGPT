@@ -21,7 +21,7 @@ class Settings:
         
         # Model Configuration
         self.openai_embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-large")
-        self.collection_name = os.getenv("ZILLIZ_COLLECTION_NAME", "research_papers")
+        self.collection_name = os.getenv("ZILLIZ_COLLECTION_NAME", "openai-embeddings")
         
         # Search Configuration
         self.top_k = int(os.getenv("TOP_K", "8"))
