@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import orjson
-import requests
+from pymilvus import MilvusClient
 from sklearn.preprocessing import MinMaxScaler
 
 from config import settings
@@ -18,13 +18,20 @@ from utils.openai_client import create_openai_client
 # Load environment variables
 load_dotenv()
 
-# Simple Zilliz REST API client
-def get_zilliz_headers():
-    """Get headers for Zilliz REST API requests."""
-    return {
-        "Authorization": f"Bearer {settings.zilliz_token}",
-        "Content-Type": "application/json"
-    }
+# Zilliz/Milvus client with simple connection
+_milvus_client = None
+
+def get_milvus_client():
+    """Get Milvus client with simple connection."""
+    global _milvus_client
+    if _milvus_client is None:
+        print("🔄 Connecting to Zilliz...")
+        _milvus_client = MilvusClient(
+            uri=settings.zilliz_uri,
+            token=settings.zilliz_token
+        )
+        print("✅ Zilliz client connected")
+    return _milvus_client
 
 # --- Gene Processing Functions ---
 def process_genes_batch(gene_mentions: List[str]) -> List[Dict[str, Any]]:
@@ -133,38 +140,29 @@ def embed_query_openai(query: str, api_key: str) -> List[float]:
         raise
 
 def query_zilliz(vector: List[float], api_key: str) -> List[dict]:
-    """Query Zilliz vector database using REST API."""
+    """Query Zilliz vector database."""
     try:
-        # Extract cluster ID from URI for REST API
-        # URI format: https://in03-xxx.serverless.aws-eu-central-1.cloud.zilliz.com
-        cluster_id = settings.zilliz_uri.split("//")[1].split(".")[0]
+        client = get_milvus_client()
         
-        # Zilliz REST API endpoint
-        api_url = f"https://{cluster_id}.api.gcp-us-west1.zillizcloud.com/v1/vector/search"
+        print(f"🔍 Querying collection: {settings.collection_name}")
+        print(f"🔍 Vector dim: {len(vector)}")
+        print(f"🔍 Limit: {settings.top_k}")
         
-        payload = {
-            "collectionName": settings.collection_name,
-            "vector": vector,
-            "limit": settings.top_k,
-            "outputFields": ["doi", "summary"]
-        }
-        
-        response = requests.post(
-            api_url,
-            headers=get_zilliz_headers(),
-            json=payload,
-            timeout=30
+        search_results = client.search(
+            collection_name=settings.collection_name,
+            data=[vector],
+            limit=settings.top_k,
+            output_fields=["doi", "summary"]
         )
         
-        if response.status_code == 200:
-            result = response.json()
-            return result.get("data", [])
-        else:
-            print(f"❌ Zilliz API error: {response.status_code} - {response.text}")
-            return []
-            
+        results = search_results[0] if search_results else []
+        print(f"🔍 Found {len(results)} results")
+        
+        return results
     except Exception as e:
         print(f"❌ Error querying Zilliz: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 def normalize_scores(matches: List[dict]) -> Dict[str, float]:
