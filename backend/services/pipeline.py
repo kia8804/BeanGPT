@@ -83,11 +83,11 @@ def get_rag_context_from_matches(matches: List[dict], top_dois: List[str]) -> Tu
     # Create a lookup dictionary from all matches for quick access
     all_matches = {}
     
-    # Process Zilliz matches
+    # Process Zilliz matches (REST API format)
     for match in matches:
-        entity = match.get("entity", {})
-        doi = entity.get("doi", "")
-        summary = entity.get("summary", "")
+        # REST API returns doi and summary directly in match object
+        doi = match.get("doi", "")
+        summary = match.get("summary", "")
         if doi and summary:
             clean_doi = doi.strip()
             all_matches[clean_doi] = summary
@@ -183,14 +183,14 @@ def normalize_scores(matches: List[dict]) -> Dict[str, float]:
     
     scores = [m.get("distance", 0.0) for m in matches]
     if not scores or max(scores) == min(scores):
-        return {m.get("entity", {}).get("doi", f"doc_{i}"): 0.0 for i, m in enumerate(matches)}
+        return {m.get("doi", f"doc_{i}"): 0.0 for i, m in enumerate(matches)}
     
     # Convert distance to similarity (assuming cosine distance)
     similarities = [1 - score for score in scores]
     norm = MinMaxScaler().fit_transform(np.array(similarities).reshape(-1, 1)).flatten()
     
     return {
-        m.get("entity", {}).get("doi", f"doc_{i}"): norm[i] 
+        m.get("doi", f"doc_{i}"): norm[i] 
         for i, m in enumerate(matches)
     }
 
