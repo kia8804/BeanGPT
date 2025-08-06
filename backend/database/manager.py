@@ -19,6 +19,7 @@ class DatabaseManager:
         self._gene_db: Optional[pd.DataFrame] = None
         self._uniprot_db: Optional[pd.DataFrame] = None
         self._bean_data: Optional[pd.DataFrame] = None
+        self._bean_historical_data: Optional[pd.DataFrame] = None
 
         
         # Efficient lookup indices for gene operations
@@ -44,10 +45,17 @@ class DatabaseManager:
     
     @property
     def bean_data(self) -> pd.DataFrame:
-        """Lazy-loaded bean trial data."""
+        """Lazy-loaded bean trial data (main merged data)."""
         if self._bean_data is None:
             self._load_bean_data()
         return self._bean_data
+    
+    @property
+    def bean_historical_data(self) -> pd.DataFrame:
+        """Lazy-loaded historical bean data."""
+        if self._bean_historical_data is None:
+            self._load_bean_data()
+        return self._bean_historical_data
     
 
     
@@ -186,43 +194,80 @@ class DatabaseManager:
             raise DatabaseError(f"Failed to load UniProt database: {str(e)}")
     
     def _load_bean_data(self) -> None:
-        """Load the bean trial data with optimized format preference."""
+        """Load the bean trial data from multiple sheets with optimized format preference."""
         try:
-            # Try to load from optimized CSV format first
-            csv_path = settings.merged_data_path.replace('.xlsx', '.csv')
-            if os.path.exists(csv_path):
-                print(f"📈 Loading from optimized CSV format: {csv_path}")
-                df = pd.read_csv(csv_path)
+            # Define CSV paths for both sheets
+            merged_csv_path = settings.merged_data_path.replace('.xlsx', '_merged_data.csv')
+            historical_csv_path = settings.merged_data_path.replace('.xlsx', '_historical.csv')
+            
+            # Load Merged Data sheet
+            if os.path.exists(merged_csv_path):
+                print(f"📈 Loading Merged Data from optimized CSV format: {merged_csv_path}")
+                df_merged = pd.read_csv(merged_csv_path)
             else:
-                print(f"📊 Loading from Excel format: {settings.merged_data_path}")
-                df = pd.read_excel(settings.merged_data_path)
+                print(f"📊 Loading Merged Data sheet from Excel format: {settings.merged_data_path}")
+                df_merged = pd.read_excel(settings.merged_data_path, sheet_name='Merged Data')
                 
                 # Create optimized CSV for future loads
                 try:
-                    print(f"💾 Creating optimized CSV for future loads: {csv_path}")
-                    df.to_csv(csv_path, index=False)
-                    print(f"✅ Saved optimized format: {csv_path}")
+                    print(f"💾 Creating optimized CSV for Merged Data: {merged_csv_path}")
+                    df_merged.to_csv(merged_csv_path, index=False)
+                    print(f"✅ Saved optimized format: {merged_csv_path}")
                 except Exception as e:
                     print(f"⚠️ Could not save optimized format: {e}")
             
+            # Load Historical sheet
+            if os.path.exists(historical_csv_path):
+                print(f"📈 Loading Historical data from optimized CSV format: {historical_csv_path}")
+                df_historical = pd.read_csv(historical_csv_path)
+            else:
+                print(f"📊 Loading Historical sheet from Excel format: {settings.merged_data_path}")
+                df_historical = pd.read_excel(settings.merged_data_path, sheet_name='Historical')
+                
+                # Create optimized CSV for future loads
+                try:
+                    print(f"💾 Creating optimized CSV for Historical data: {historical_csv_path}")
+                    df_historical.to_csv(historical_csv_path, index=False)
+                    print(f"✅ Saved optimized format: {historical_csv_path}")
+                except Exception as e:
+                    print(f"⚠️ Could not save optimized format: {e}")
+            
+            # Process the main merged data
             # Clean and process the data
-            df = df[
-                ~df["Cultivar Name"].astype(str).str.lower().isin(["mean", "cv", "lsd(0.05)"])
+            df_merged = df_merged[
+                ~df_merged["Cultivar Name"].astype(str).str.lower().isin(["mean", "cv", "lsd(0.05)"])
             ]
             
-            # Convert columns to appropriate types
-            df["Year"] = pd.to_numeric(df["Year"], errors="coerce")
-            df["Yield"] = pd.to_numeric(df["Yield"], errors="coerce")
-            df["Maturity"] = pd.to_numeric(df["Maturity"], errors="coerce")
+            # Convert columns to appropriate types for merged data
+            if "Year" in df_merged.columns:
+                df_merged["Year"] = pd.to_numeric(df_merged["Year"], errors="coerce")
+            if "Yield" in df_merged.columns:
+                df_merged["Yield"] = pd.to_numeric(df_merged["Yield"], errors="coerce")
+            if "Maturity" in df_merged.columns:
+                df_merged["Maturity"] = pd.to_numeric(df_merged["Maturity"], errors="coerce")
             
             # Optional: Add lowercase columns for easier filtering
-            if 'bean_type' in df.columns:
-                df['bean_type'] = df['bean_type'].astype(str).str.lower()
-            if 'trial_group' in df.columns:
-                df['trial_group'] = df['trial_group'].astype(str).str.lower()
+            if 'bean_type' in df_merged.columns:
+                df_merged['bean_type'] = df_merged['bean_type'].astype(str).str.lower()
+            if 'trial_group' in df_merged.columns:
+                df_merged['trial_group'] = df_merged['trial_group'].astype(str).str.lower()
             
-            self._bean_data = df
-            print(f"✅ Loaded {len(self._bean_data)} bean trial records from database")
+            # Process historical data
+            if "Cultivar Name" in df_historical.columns:
+                df_historical = df_historical[
+                    ~df_historical["Cultivar Name"].astype(str).str.lower().isin(["mean", "cv", "lsd(0.05)"])
+                ]
+            
+            # Convert numeric columns in historical data if they exist
+            for col in df_historical.columns:
+                if col.lower() in ['year', 'yield', 'maturity']:
+                    df_historical[col] = pd.to_numeric(df_historical[col], errors="coerce")
+            
+            self._bean_data = df_merged
+            self._bean_historical_data = df_historical
+            
+            print(f"✅ Loaded {len(self._bean_data)} main bean trial records from Merged Data sheet")
+            print(f"✅ Loaded {len(self._bean_historical_data)} historical bean records from Historical sheet")
             
         except FileNotFoundError:
             raise DatabaseError(f"Bean dataset not found at {settings.merged_data_path}")

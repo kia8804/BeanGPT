@@ -18,12 +18,17 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     Only creates charts when explicitly requested.
     """
     
-    # Use database manager to get bean data
+    # Use database manager to get bean data (both main and historical)
     df_trials = db_manager.bean_data
+    df_historical = db_manager.bean_historical_data
     
     # Check if data was loaded successfully
     if df_trials.empty:
         return "Bean trial data could not be loaded.", "", {}
+    
+    # Combine both datasets for comprehensive analysis
+    # Historical data provides additional context and pedigree information
+    print(f"📊 Main dataset: {len(df_trials)} rows, Historical dataset: {len(df_historical)} rows")
 
     # Extract API key for chart generation
     api_key = args.get('api_key')
@@ -33,9 +38,11 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     # Debug: Print the arguments received
     print(f"🔍 Bean query args received: {args}")
     
-    # NO FILTERING - Pass full dataset to GPT always
+    # NO FILTERING - Pass both datasets to GPT always
     df = df_trials.copy()
-    print(f"📊 Passing FULL dataset to GPT: {len(df)} rows")
+    df_hist = df_historical.copy() if not df_historical.empty else pd.DataFrame()
+    print(f"📊 Passing FULL main dataset to GPT: {len(df)} rows")
+    print(f"📚 Passing historical dataset to GPT: {len(df_hist)} rows")
 
     # Get the original question for analysis
     original_question = args.get("original_question", "")
@@ -209,9 +216,17 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         if mentioned_cultivars:
             response += f"**🌱 Cultivars mentioned:** {', '.join([str(c) for c in mentioned_cultivars])}\n\n"
         
-        response += f"**📊 Dataset:** {len(df)} records from Ontario bean trials\n"
+        response += f"**📊 Main Dataset:** {len(df)} records from Ontario bean trials\n"
         response += f"**📅 Years:** {df['Year'].min()}-{df['Year'].max()}\n"
-        response += f"**📍 Locations:** {', '.join(df['Location'].dropna().unique())}\n\n"
+        response += f"**📍 Locations:** {', '.join(df['Location'].dropna().unique())}\n"
+        
+        # Add historical data information if available
+        if not df_hist.empty:
+            response += f"**📚 Historical Dataset:** {len(df_hist)} additional records for context\n"
+            if 'Cultivar Name' in df_hist.columns:
+                hist_cultivars = df_hist['Cultivar Name'].dropna().nunique()
+                response += f"**🌱 Historical cultivars:** {hist_cultivars}\n"
+        response += f"\n"
         
         # Add summary statistics
         if 'Cultivar Name' in df.columns:

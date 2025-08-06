@@ -800,7 +800,9 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "• NEVER generate vague placeholder values like [specific yield]\n\n"
                                         
                                         "📊 DATA CONTEXT\n"
-                                        "This dataset contains dry bean trial data from Ontario stations.\n"
+                                        "You have access to TWO datasets:\n"
+                                        "1. **Main Dataset**: Current dry bean trial data from Ontario stations with enhanced pedigree information\n"
+                                        "2. **Historical Dataset**: Additional historical cultivar data for context and breeding insights\n\n"
                                         "The valid station abbreviations and names are:\n\n"
                                         "AUBN – Auburn\n"
                                         "BLYT – Blyth\n"
@@ -824,6 +826,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "✅ PERMITTED BEHAVIOR\n"
                                         "• You may compare cultivars based on numeric traits (e.g., similar yield or maturity)\n"
                                         "• You may list top-performing cultivars that outperform a target cultivar in the same class\n"
+                                        "• You may reference historical data for pedigree information and breeding context when relevant\n"
                                         "• Only mention data that is NOT in the dataset if the user specifically asks for it\n"
                                         "• Use explicit values and clearly state which cultivars are statistically similar or superior\n\n"
                                         
@@ -846,7 +849,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                 },
                                 {
                                     "role": "user",
-                                    "content": f"Based on the question '{question}', analyze this data:\n\n{preview}"
+                                    "content": f"Based on the question '{question}', analyze this data:\n\n**MAIN DATASET:**\n{preview}\n\n**HISTORICAL DATA AVAILABLE:**\nHistorical data is also available for additional context and pedigree information. Include relevant historical insights when applicable."
                                 }
                             ],
                             temperature=0.3,
