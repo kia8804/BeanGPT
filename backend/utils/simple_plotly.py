@@ -459,7 +459,7 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
         {"role": "user", "content": f"Sample categorical values: {categorical_info}"},
         {"role": "user", "content": f"Sample data (first 3 rows): {rows[:3]}"},
         {"role": "user", "content": "CRITICAL BEAN TYPE MAPPING: In this dataset, 'black beans' are stored as 'coloured bean' in the bean_type column. When filtering for black beans, use bean_type == 'coloured bean' OR filter by cultivar names that contain 'black'."},
-        {"role": "user", "content": "ENHANCED DATA CONTEXT: This dataset includes enriched breeding information - Market Class, Pedigree, Released Year, Disease Resistance markers (Common Mosaic Virus R1/R15, Anthracnose R17/R23/R73, Common Blight). Historical weather data is also available for environmental context."},
+        {"role": "user", "content": "ENHANCED DATA CONTEXT: This dataset includes enriched breeding information - Market Class, Pedigree, Released Year, Disease Resistance markers (Common Mosaic Virus R1/R15, Anthracnose R17/R23/R73, Common Blight). IMPORTANT: Historical weather data is available in a separate dataset that can be accessed via db_manager.historical_data - it contains 15+ weather variables by location and year that can be linked to bean performance."},
         {"role": "user", "content": f"User request: {prompt}"},
         {"role": "user", "content": "CRITICAL: Extract any cultivar names mentioned in the user request and use them in your analysis"},
         {"role": "user", "content": "🚨 ABSOLUTE RULE: If your chart would only show 1 data point (1 bar, 1 value, etc.), set fig = None instead. Single-value charts are USELESS and FORBIDDEN."},
@@ -475,6 +475,9 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
 
 def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
     """Execute the LLM-generated code and return the Plotly Figure."""
+    # Import database manager for historical data access
+    from database.manager import db_manager
+    
     # Create safe execution environment for research use
     safe_globals = {
         "df": df, 
@@ -483,6 +486,8 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
         "pd": pd,
         "np": __import__("numpy"),
         "plotly": __import__("plotly"),
+        "db_manager": db_manager,  # Add access to historical data
+        "stats": __import__("scipy.stats"),  # Add scipy.stats for regression
         "print": print,
         "len": len,
         "range": range,

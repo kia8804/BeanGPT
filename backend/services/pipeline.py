@@ -726,27 +726,42 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
         
         # Check for bean data keywords - broader detection for data analysis
         bean_keywords = ["yield", "maturity", "cultivar", "variety", "performance", "bean", "production", "steam", "lighthouse", "seal"]
+        
+        # Add location-based keywords for environmental/weather queries at trial locations
+        location_keywords = ["auburn", "blyth", "elora", "granton", "kippen", "monkton", "thorndale", "winchester", "woodstock", 
+                           "harrow", "highbury", "huron", "brussels", "kempton", "exeter", "st. thomas", "st thomas"]
+        
+        # Add weather/environmental keywords that should trigger bean data when combined with locations
+        weather_keywords = ["temperature", "weather", "precipitation", "humidity", "climate", "environmental", "rainfall", "conditions"]
+        
         chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate", "table", "display"]
         
         # Trigger bean data analysis for relevant questions
         has_bean_keywords = any(keyword in question.lower() for keyword in bean_keywords)
+        has_location_keywords = any(keyword in question.lower() for keyword in location_keywords)
+        has_weather_keywords = any(keyword in question.lower() for keyword in weather_keywords)
         explicitly_wants_chart = any(keyword in question.lower() for keyword in chart_keywords)
         
-        if has_bean_keywords:
+        # Trigger bean data if: regular bean keywords OR (location + weather keywords)
+        should_query_bean_data = has_bean_keywords or (has_location_keywords and has_weather_keywords)
+        
+        if should_query_bean_data:
             # Let GPT decide whether to call the bean function
             function_call_messages = [
                 {
                     "role": "system",
                     "content": (
-                        "You are a dry bean research platform with access to Ontario bean trial data. "
+                        "You are a dry bean research platform with access to Ontario bean trial data AND historical weather data. "
                         "ALWAYS call the query_bean_data function when the user asks for:\n"
                         "- Bean performance data (yield, maturity, etc.)\n"
                         "- Charts, plots, graphs, or visualizations of bean data\n"
                         "- Cultivar comparisons or analysis\n"
                         "- Questions about specific bean varieties\n"
                         "- Questions about trial results or research station data\n"
+                        "- Weather/environmental questions about trial locations (Auburn, Blyth, Elora, etc.)\n"
+                        "- Temperature, precipitation, humidity data for research stations\n"
                         "- Any question that mentions bean characteristics, locations, or years\n\n"
-                        "The user's question mentions bean-related terms, so you should call the function."
+                        "The user's question mentions bean-related terms or trial locations, so you should call the function."
                     )
                 }
             ]
@@ -1030,13 +1045,26 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
     if not is_genetic:
         # Check for bean data keywords - broader detection for data analysis
         bean_keywords = ["yield", "maturity", "cultivar", "variety", "performance", "bean", "production", "steam", "lighthouse", "seal"]
+        
+        # Add location-based keywords for environmental/weather queries at trial locations
+        location_keywords = ["auburn", "blyth", "elora", "granton", "kippen", "monkton", "thorndale", "winchester", "woodstock", 
+                           "harrow", "highbury", "huron", "brussels", "kempton", "exeter", "st. thomas", "st thomas"]
+        
+        # Add weather/environmental keywords that should trigger bean data when combined with locations
+        weather_keywords = ["temperature", "weather", "precipitation", "humidity", "climate", "environmental", "rainfall", "conditions"]
+        
         chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate", "table", "display"]
         
         # Trigger bean data analysis for relevant questions
         has_bean_keywords = any(keyword in question.lower() for keyword in bean_keywords)
+        has_location_keywords = any(keyword in question.lower() for keyword in location_keywords)
+        has_weather_keywords = any(keyword in question.lower() for keyword in weather_keywords)
         explicitly_wants_chart = any(keyword in question.lower() for keyword in chart_keywords)
+        
+        # Trigger bean data if: regular bean keywords OR (location + weather keywords)
+        should_query_bean_data = has_bean_keywords or (has_location_keywords and has_weather_keywords)
                 
-        if has_bean_keywords:
+        if should_query_bean_data:
             try:
                 # Let GPT decide whether to call the bean function
                 function_call_messages = [

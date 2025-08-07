@@ -74,12 +74,29 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     
     mentioned_cultivars = find_mentioned_cultivars(original_question, df)
     
-    # CRITICAL FIX: Override function call parameters with correctly detected cultivars
+    # CRITICAL FIX: Validate cultivar parameter from function call
+    function_call_cultivar = args.get('cultivar')
+    if function_call_cultivar and function_call_cultivar not in df['Cultivar Name'].values:
+        print(f"🚨 WARNING: Function call suggested cultivar '{function_call_cultivar}' does not exist in dataset!")
+        # Check if it's similar to any real cultivar
+        all_cultivars = df['Cultivar Name'].dropna().astype(str)
+        similar_cultivars = all_cultivars[all_cultivars.str.contains(function_call_cultivar, case=False, na=False)]
+        if not similar_cultivars.empty:
+            print(f"🔍 Similar cultivars found: {list(similar_cultivars.unique())}")
+        else:
+            print(f"❌ No similar cultivars found. Removing invalid cultivar parameter.")
+            args.pop('cultivar', None)  # Remove the invalid parameter
+    
+    # Track if we removed an invalid cultivar for user notification
+    invalid_cultivar_mentioned = function_call_cultivar and function_call_cultivar not in df['Cultivar Name'].values
+    invalid_cultivar_name = function_call_cultivar if invalid_cultivar_mentioned else None
+    
+    # Override function call parameters with correctly detected cultivars
     if mentioned_cultivars:
         # Update the cultivar parameter with the first detected cultivar
         args['cultivar'] = str(mentioned_cultivars[0])
         print(f"🔧 Fixed cultivar parameter: '{args.get('cultivar', 'None')}' -> '{mentioned_cultivars[0]}'")
-    
+            
     # General dynamic disambiguation system
     def detect_and_resolve_ambiguity(question, args, df):
         """
@@ -163,9 +180,162 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     chart_keywords = ['chart', 'graph', 'plot', 'visualize', 'visualization', 'show me', 'display', 'table', 'create', 'regression', 'linear regression', 'correlation', 'scatter', 'trend', 'relationship']
     chart_requested = any(keyword in original_question.lower() for keyword in chart_keywords)
     
+    # Check if this is primarily a weather/environmental query
+    weather_keywords = ['temperature', 'weather', 'precipitation', 'humidity', 'climate', 'rainfall', 'conditions']
+    is_weather_query = any(keyword in original_question.lower() for keyword in weather_keywords)
+    
+    # Check if this is a cross-analysis query (cultivars + locations + environmental factors)
+    cross_analysis_keywords = ['highest temperature', 'warmest location', 'hottest location', 'highest average temperature', 
+                              'location with highest', 'cultivar had the location', 'location with the most']
+    is_cross_analysis = any(phrase in original_question.lower() for phrase in cross_analysis_keywords)
+    
+    # Handle cross-analysis queries (cultivars + locations + environmental factors)
+    if is_cross_analysis and historical_data_available:
+        try:
+            # Location mapping for cross-analysis
+            location_mapping = {
+                'Auburn': 'Auburn', 'Blyth': 'Blyth', 'Elora': 'Elora', 'Granton': 'Granton',
+                'Kippen': 'Kippen', 'Monkton': 'Monkton', 'St. Thomas': 'St. Thomas',
+                'Thorndale': 'Thorndale', 'Winchester': 'Winchester', 'Woodstock': 'Woodstock',
+                'Brussels': None, 'Brusselssels': None, 'Kempton': None, 'Kemptonton': None,
+                'Harrow-Blyth': 'Harrow', 'Exeter': None,
+                # Handle variations
+                'AUBN': 'Auburn', 'WOOD': 'Woodstock', 'WINC': 'Winchester', 'STHM': 'St. Thomas'
+            }
+            
+            # Get historical weather data
+            hist_data = db_manager.historical_data
+            
+            # Calculate average temperature by location (growing season: May-September)
+            location_temps = {}
+            for bean_location in df['Location'].dropna().unique():
+                hist_location = location_mapping.get(bean_location, bean_location)
+                if hist_location and hist_location in hist_data['Location'].values:
+                    location_weather = hist_data[
+                        (hist_data['Location'] == hist_location) & 
+                        (hist_data['Month'] >= 5) & (hist_data['Month'] <= 9)  # Growing season
+                    ]
+                    if not location_weather.empty:
+                        avg_temp = location_weather['Temperature'].mean()
+                        location_temps[bean_location] = {
+                            'hist_location': hist_location,
+                            'avg_temp': avg_temp,
+                            'bean_location': bean_location
+                        }
+            
+            if location_temps:
+                # Find location with highest average temperature
+                hottest_location = max(location_temps.keys(), key=lambda loc: location_temps[loc]['avg_temp'])
+                hottest_temp = location_temps[hottest_location]['avg_temp']
+                hottest_hist_location = location_temps[hottest_location]['hist_location']
+                
+                # Find cultivars grown at the hottest location
+                hottest_location_cultivars = df[df['Location'] == hottest_location]
+                
+                response = f"## 🌡️ **Location Temperature Analysis**\n\n"
+                response += f"**🔥 Hottest Location**: {hottest_location}"
+                if hottest_location != hottest_hist_location:
+                    response += f" ({hottest_hist_location})"
+                response += f"\n**📊 Average Growing Season Temperature**: {hottest_temp:.1f}°C\n\n"
+                
+                if not hottest_location_cultivars.empty:
+                    response += f"**🌱 Cultivars Grown at {hottest_location}:**\n"
+                    cultivar_summary = hottest_location_cultivars.groupby('Cultivar Name').agg({
+                        'Yield': 'mean',
+                        'Year': ['min', 'max', 'count']
+                    }).round(1)
+                    
+                    for cultivar in cultivar_summary.index:
+                        avg_yield = cultivar_summary.loc[cultivar, ('Yield', 'mean')]
+                        trial_count = cultivar_summary.loc[cultivar, ('Year', 'count')]
+                        response += f"- **{cultivar}**: {avg_yield:.1f} kg/ha average ({trial_count} trials)\n"
+                    
+                    response += f"\n**📈 Temperature Comparison with Other Locations:**\n"
+                    # Show top 5 hottest locations
+                    sorted_locations = sorted(location_temps.items(), key=lambda x: x[1]['avg_temp'], reverse=True)[:5]
+                    for i, (loc, data) in enumerate(sorted_locations):
+                        status = "🔥" if i == 0 else f"{i+1}."
+                        response += f"{status} **{loc}**: {data['avg_temp']:.1f}°C\n"
+                    
+                    response += f"\n*Analysis based on {len(location_temps)} locations with weather data.*"
+                    
+                    return response, response, {}
+                else:
+                    return f"**⚠️ No cultivar data found for {hottest_location}**", "", {}
+            else:
+                return "**⚠️ Unable to calculate location temperatures - insufficient weather data linkage**", "", {}
+                
+        except Exception as e:
+            print(f"⚠️ Error processing cross-analysis query: {e}")
+            # Fall through to normal processing
+    
+    # Handle pure weather queries for trial locations
+    if is_weather_query and args.get('location') and historical_data_available:
+        try:
+            # Location mapping for weather queries
+            location_mapping = {
+                'Auburn': 'Auburn', 'Blyth': 'Blyth', 'Elora': 'Elora', 'Granton': 'Granton',
+                'Kippen': 'Kippen', 'Monkton': 'Monkton', 'St. Thomas': 'St. Thomas',
+                'Thorndale': 'Thorndale', 'Winchester': 'Winchester', 'Woodstock': 'Woodstock',
+                'Brussels': None, 'Brusselssels': None, 'Kempton': None, 'Kemptonton': None,
+                'Harrow-Blyth': 'Harrow', 'Exeter': None,
+                # Handle potential variations
+                'AUBN': 'Auburn', 'WOOD': 'Woodstock', 'WINC': 'Winchester', 'STHM': 'St. Thomas'
+            }
+            
+            location = args.get('location')
+            hist_location = location_mapping.get(location, location)
+            if hist_location:
+                hist_data = db_manager.historical_data
+                location_data = hist_data[hist_data['Location'] == hist_location]
+                
+                if not location_data.empty:
+                    # Get recent years data (last 5 years)
+                    recent_years = location_data[location_data['Year'] >= (location_data['Year'].max() - 4)]
+                    
+                    # Calculate average conditions
+                    avg_temp = recent_years['Temperature'].mean()
+                    avg_precip = recent_years['Total_Precipitation_mm'].mean() * 365  # Annual estimate
+                    avg_humidity = recent_years['Relative_Humidity_2m_percent'].mean()
+                    
+                    weather_response = f"## 🌤️ **Weather Data for {location}**\n\n"
+                    weather_response += f"**📍 Location**: {hist_location} Research Station\n"
+                    weather_response += f"**📊 Data Period**: {location_data['Year'].min()}-{location_data['Year'].max()}\n\n"
+                    weather_response += f"**Recent 5-Year Averages:**\n"
+                    weather_response += f"- **Temperature**: {avg_temp:.1f}°C\n"
+                    weather_response += f"- **Annual Precipitation**: ~{avg_precip:.0f}mm\n"
+                    weather_response += f"- **Relative Humidity**: {avg_humidity:.1f}%\n\n"
+                    
+                    # Add specific temperature info if requested
+                    if 'temperature' in original_question.lower():
+                        temp_range = f"{recent_years['Min_Temperature'].mean():.1f}°C to {recent_years['Max_Temperature'].mean():.1f}°C"
+                        weather_response += f"**🌡️ Temperature Details:**\n"
+                        weather_response += f"- **Average**: {avg_temp:.1f}°C\n"
+                        weather_response += f"- **Typical Range**: {temp_range}\n\n"
+                    
+                    weather_response += f"*This data comes from {len(location_data):,} historical weather records for bean trial research.*\n"
+                    
+                    return weather_response, weather_response, {}
+                else:
+                    return f"**⚠️ Weather data not available for {location}**\n\nAvailable locations: Auburn, Blyth, Elora, Granton, Harrow, Kippen, Monkton, St. Thomas, Thorndale, Winchester, Woodstock", "", {}
+            else:
+                return f"**⚠️ Weather data not available for {location}**\n\nAvailable locations: Auburn, Blyth, Elora, Granton, Harrow, Kippen, Monkton, St. Thomas, Thorndale, Winchester, Woodstock", "", {}
+                
+        except Exception as e:
+            print(f"⚠️ Error processing weather query: {e}")
+    
     if chart_requested and api_key:
-        # Generate chart and description - pass cultivar context
-        cultivar_context = f"Focus on these cultivars: {', '.join([str(c) for c in mentioned_cultivars])}" if mentioned_cultivars else ""
+        # Generate chart and description - pass cultivar context with environmental info
+        if invalid_cultivar_mentioned:
+            cultivar_context = f"IMPORTANT: The cultivar '{invalid_cultivar_name}' mentioned in the request does not exist in the dataset. Do not highlight or reference it in the chart. Show only valid cultivars from the dataset."
+        elif mentioned_cultivars:
+            cultivar_context = f"Focus on these cultivars: {', '.join([str(c) for c in mentioned_cultivars])}"
+        else:
+            cultivar_context = ""
+            
+        # Add environmental context for chart generation
+        if historical_data_available and 'navy' in original_question.lower():
+            cultivar_context += f" ADDITIONAL CONTEXT: Historical weather data is available by location and year. The dataset includes comprehensive environmental variables (temperature, precipitation, humidity, etc.) that can be linked to bean performance by matching location names between the main dataset and historical dataset."
         chart_data = create_smart_chart(df, original_question, api_key, cultivar_context)
         
         # Handle chart generation failure gracefully
@@ -175,6 +345,10 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         
         # Create a data-rich response with actual insights
         response = f"## 📊 **Bean Data Analysis**\n\n"
+        
+        # CRITICAL: Notify user if invalid cultivar was mentioned
+        if invalid_cultivar_mentioned:
+            response += f"⚠️ **Note:** The cultivar '{invalid_cultivar_name}' was not found in the Ontario bean trial dataset. The analysis below shows navy bean performance patterns without highlighting this specific cultivar.\n\n"
         
         # Add cultivar context if any were mentioned
         if mentioned_cultivars:
@@ -279,6 +453,97 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                 
                 response += "\n"
         
+        # Add environmental context for navy beans or specific bean types  
+        bean_type_check = 'white bean' if 'white bean' in original_question.lower() else 'coloured bean' if 'coloured bean' in original_question.lower() else None
+        if historical_data_available and ('navy' in original_question.lower() or 'white bean' in original_question.lower() or bean_type_check == 'white bean'):
+            try:
+                # Location mapping between bean dataset and historical dataset
+                # Most locations now match directly thanks to your fixes!
+                location_mapping = {
+                    # Perfect matches (10/16 locations) - these work automatically
+                    # 'Auburn', 'Blyth', 'Elora', 'Granton', 'Kippen', 'Monkton', 
+                    # 'St. Thomas', 'Thorndale', 'Winchester', 'Woodstock'
+                    
+                    # Manual mappings for remaining 6 locations
+                    'Brussels': None,  # No Brussels in historical data
+                    'Brusselssels': 'Brussels',  # Assume typo → Brussels (but Brussels has no weather data)
+                    'Kempton': None,  # No Kempton in historical data  
+                    'Kemptonton': 'Kempton',  # Assume typo → Kempton (but Kempton has no weather data)
+                    'Harrow-Blyth': 'Harrow',  # Map compound location to Harrow ✅
+                    'Exeter': None,  # No Exeter in historical data
+                }
+                
+                # Get navy bean data
+                navy_bean_data = df[df['bean_type'] == 'white bean'] if 'bean_type' in df.columns else df
+                if not navy_bean_data.empty:
+                    # Get unique locations and years for navy beans
+                    navy_locations = navy_bean_data['Location'].dropna().astype(str).unique()
+                    navy_years = navy_bean_data['Year'].dropna().astype(int).unique()
+                    
+                    # Calculate environmental averages for navy bean growing locations
+                    env_summaries = []
+                    no_weather_locations = []
+                    hist_data = db_manager.historical_data
+                    
+                    for bean_location in navy_locations[:10]:  # Check up to 10 locations
+                        # Map bean location to historical location
+                        hist_location = location_mapping.get(bean_location)
+                        
+                        if hist_location is None:
+                            no_weather_locations.append(bean_location)
+                            continue
+                            
+                        # Find matching weather data
+                        location_env_data = hist_data[
+                            (hist_data['Location'] == hist_location) & 
+                            (hist_data['Year'].isin(navy_years))
+                        ]
+                        
+                        if not location_env_data.empty:
+                            # Calculate growing season averages (May-September)
+                            growing_season = location_env_data[
+                                (location_env_data['Month'] >= 5) & (location_env_data['Month'] <= 9)
+                            ]
+                            
+                            if not growing_season.empty:
+                                avg_temp = growing_season['Temperature'].mean()
+                                total_precip = growing_season['Total_Precipitation_mm'].sum()
+                                avg_humidity = growing_season['Relative_Humidity_2m_percent'].mean()
+                                
+                                # Get yield for this location
+                                location_yield = navy_bean_data[navy_bean_data['Location'] == bean_location]['Yield'].mean()
+                                
+                                env_summaries.append({
+                                    'bean_location': bean_location,
+                                    'hist_location': hist_location,
+                                    'temp': avg_temp,
+                                    'precip': total_precip,
+                                    'humidity': avg_humidity,
+                                    'yield': location_yield
+                                })
+                        else:
+                            no_weather_locations.append(bean_location)
+                    
+                    if env_summaries:
+                        response += f"**🌤️ Environmental Context for Navy Bean Locations:**\n"
+                        for env in env_summaries:
+                            display_name = env['bean_location'] if env['bean_location'] == env['hist_location'] else f"{env['bean_location']} ({env['hist_location']})"
+                            response += f"- **{display_name}**: {env['temp']:.1f}°C, {env['precip']:.0f}mm precip, {env['humidity']:.0f}% humidity → {env['yield']:.0f} kg/ha avg yield\n"
+                        response += "\n"
+                        
+                        # Add environmental insights
+                        avg_temp_all = sum(e['temp'] for e in env_summaries) / len(env_summaries)
+                        avg_precip_all = sum(e['precip'] for e in env_summaries) / len(env_summaries)
+                        response += f"**🔬 Growing Season Averages**: {avg_temp_all:.1f}°C temperature, {avg_precip_all:.0f}mm precipitation\n\n"
+                    
+                    # Note locations without weather data
+                    if no_weather_locations:
+                        response += f"**📍 Note**: Weather data not available for {len(no_weather_locations)} locations: {', '.join(no_weather_locations)}\n\n"
+            
+            except Exception as e:
+                print(f"⚠️ Error generating environmental context: {e}")
+                response += f"**⚠️ Environmental data processing error** - historical weather integration needs refinement\n\n"
+        
         # Add comparison insights if multiple cultivars or filtering
         elif len(mentioned_cultivars) > 1:
             response += f"**🔍 Comparison available** between {len(mentioned_cultivars)} cultivars\n"
@@ -293,6 +558,10 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     else:
         # No chart requested, provide text-based analysis
         response = f"## 📊 **Bean Data Overview**\n\n"
+        
+        # CRITICAL: Notify user if invalid cultivar was mentioned
+        if invalid_cultivar_mentioned:
+            response += f"⚠️ **Note:** The cultivar '{invalid_cultivar_name}' was not found in the Ontario bean trial dataset. The analysis below shows general bean performance data.\n\n"
         
         # Add cultivar context if any were mentioned
         if mentioned_cultivars:
@@ -339,7 +608,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
 # Enhanced function schema for OpenAI function calling with new data capabilities
 function_schema = {
     "name": "query_bean_data",
-    "description": "Query the enhanced Ontario bean trial dataset for comprehensive cultivar analysis including performance metrics, breeding characteristics, disease resistance, environmental context, and visualizations. Use this when users ask about bean varieties, breeding information, disease resistance, environmental factors, or want comparisons and charts.",
+    "description": "Query the enhanced Ontario bean trial dataset AND historical weather data for comprehensive analysis including performance metrics, breeding characteristics, disease resistance, environmental context, and visualizations. ALSO use this for weather/climate queries about trial locations (Auburn, Blyth, Elora, etc.) as it has access to 15+ weather variables including temperature, precipitation, and humidity. Use this when users ask about bean varieties, breeding information, disease resistance, environmental factors, weather data, or want comparisons and charts.",
     "parameters": {
         "type": "object",
         "properties": {
