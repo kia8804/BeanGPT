@@ -84,7 +84,7 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
         "- ALWAYS check if values exist in columns before filtering\n"
         "- If requested data doesn't exist, create a chart with available data and informative title\n"
         "- When user requests global/world/country data but only local data is available, create a clear table showing the data limitation\n"
-        "- Creates exactly ONE Plotly figure assigned to variable `fig`\n"
+        "- Creates exactly ONE Plotly figure assigned to variable `fig`\n" 
         "\n"
         "🚨 CRITICAL CHART INTELLIGENCE RULES:\n"
         "- NEVER create single-value charts (1 bar, 1 point, etc.) - they are USELESS\n"
@@ -459,6 +459,7 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
         {"role": "user", "content": f"Sample categorical values: {categorical_info}"},
         {"role": "user", "content": f"Sample data (first 3 rows): {rows[:3]}"},
         {"role": "user", "content": "CRITICAL BEAN TYPE MAPPING: In this dataset, 'black beans' are stored as 'coloured bean' in the bean_type column. When filtering for black beans, use bean_type == 'coloured bean' OR filter by cultivar names that contain 'black'."},
+        {"role": "user", "content": "ENHANCED DATA CONTEXT: This dataset includes enriched breeding information - Market Class, Pedigree, Released Year, Disease Resistance markers (Common Mosaic Virus R1/R15, Anthracnose R17/R23/R73, Common Blight). Historical weather data is also available for environmental context."},
         {"role": "user", "content": f"User request: {prompt}"},
         {"role": "user", "content": "CRITICAL: Extract any cultivar names mentioned in the user request and use them in your analysis"},
         {"role": "user", "content": "🚨 ABSOLUTE RULE: If your chart would only show 1 data point (1 bar, 1 value, etc.), set fig = None instead. Single-value charts are USELESS and FORBIDDEN."},

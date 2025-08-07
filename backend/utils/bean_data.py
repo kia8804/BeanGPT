@@ -14,21 +14,26 @@ from database.manager import db_manager
 
 def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     """
-    SIMPLIFIED VERSION: Analyze bean data with optional chart generation.
-    Only creates charts when explicitly requested.
+    ENHANCED VERSION: Analyze enriched bean data with historical context and optional chart generation.
+    Now includes pedigree, market class, disease resistance, and environmental data.
     """
     
-    # Use database manager to get bean data (both main and historical)
+    # Use database manager to get both bean and historical data
     df_trials = db_manager.bean_data
-    df_historical = db_manager.bean_historical_data
     
     # Check if data was loaded successfully
     if df_trials.empty:
         return "Bean trial data could not be loaded.", "", {}
     
-    # Combine both datasets for comprehensive analysis
-    # Historical data provides additional context and pedigree information
-    print(f"📊 Main dataset: {len(df_trials)} rows, Historical dataset: {len(df_historical)} rows")
+    # Get historical data for environmental context (loaded lazily)
+    historical_data_available = True
+    try:
+        hist_data = db_manager.historical_data
+        if hist_data.empty:
+            historical_data_available = False
+    except Exception as e:
+        print(f"⚠️ Historical data not available: {e}")
+        historical_data_available = False
 
     # Extract API key for chart generation
     api_key = args.get('api_key')
@@ -38,11 +43,9 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     # Debug: Print the arguments received
     print(f"🔍 Bean query args received: {args}")
     
-    # NO FILTERING - Pass both datasets to GPT always
+    # NO FILTERING - Pass full dataset to GPT always
     df = df_trials.copy()
-    df_hist = df_historical.copy() if not df_historical.empty else pd.DataFrame()
-    print(f"📊 Passing FULL main dataset to GPT: {len(df)} rows")
-    print(f"📚 Passing historical dataset to GPT: {len(df_hist)} rows")
+    print(f"📊 Passing FULL dataset to GPT: {len(df)} rows")
 
     # Get the original question for analysis
     original_question = args.get("original_question", "")
@@ -177,28 +180,107 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         if mentioned_cultivars:
             response += f"**🌱 Cultivars analyzed:** {', '.join([str(c) for c in mentioned_cultivars])}\n\n"
             
-            # Add specific data insights for mentioned cultivars
+            # Add specific data insights for mentioned cultivars with enriched information
             for cultivar in mentioned_cultivars:
                 cultivar_data = df[df['Cultivar Name'] == cultivar]
                 if not cultivar_data.empty:
                     response += f"**{cultivar} Performance:**\n"
                     response += f"- **Records:** {len(cultivar_data)} trials\n"
+                    
+                    # Core performance metrics
                     if 'Yield' in cultivar_data.columns:
                         avg_yield = cultivar_data['Yield'].mean()
                         response += f"- **Average yield:** {avg_yield:.2f} kg/ha\n"
                     if 'Maturity' in cultivar_data.columns:
                         avg_maturity = cultivar_data['Maturity'].mean()
                         response += f"- **Average maturity:** {avg_maturity:.1f} days\n"
+                    
+                    # Enriched breeding information
+                    if 'Market Class' in cultivar_data.columns:
+                        market_class = cultivar_data['Market Class'].dropna().iloc[0] if not cultivar_data['Market Class'].dropna().empty else None
+                        if market_class:
+                            response += f"- **Market class:** {market_class}\n"
+                    
+                    if 'Released Year' in cultivar_data.columns:
+                        released_year = cultivar_data['Released Year'].dropna().iloc[0] if not cultivar_data['Released Year'].dropna().empty else None
+                        if released_year and not pd.isna(released_year):
+                            response += f"- **Released:** {int(released_year)}\n"
+                    
+                    if 'Pedigree' in cultivar_data.columns:
+                        pedigree = cultivar_data['Pedigree'].dropna().iloc[0] if not cultivar_data['Pedigree'].dropna().empty else None
+                        if pedigree:
+                            response += f"- **Pedigree:** {pedigree}\n"
+                    
+                    # Disease resistance information
+                    resistance_traits = []
+                    for col in ['Common Mosaic Virus R1', 'Common Mosaic Virus R15', 'Anthracnose R17', 'Anthracnose R23', 'Anthracnose R73', 'Common Blight']:
+                        if col in cultivar_data.columns:
+                            resistance = cultivar_data[col].dropna().iloc[0] if not cultivar_data[col].dropna().empty else None
+                            if resistance and str(resistance).upper() == 'R':
+                                trait_name = col.replace('Common Mosaic Virus R1', 'CMV R1').replace('Common Mosaic Virus R15', 'CMV R15').replace('Anthracnose R17', 'Anth R17').replace('Anthracnose R23', 'Anth R23').replace('Anthracnose R73', 'Anth R73').replace('Common Blight', 'CB')
+                                resistance_traits.append(trait_name)
+                    
+                    if resistance_traits:
+                        response += f"- **Disease resistance:** {', '.join(resistance_traits)}\n"
+                    
+                    # Trial context
                     if 'Year' in cultivar_data.columns:
-                        years = f"{cultivar_data['Year'].min()}-{cultivar_data['Year'].max()}"
+                        years = f"{cultivar_data['Year'].min():.0f}-{cultivar_data['Year'].max():.0f}"
                         response += f"- **Years tested:** {years}\n"
-                    response += f"- **Locations:** {', '.join(cultivar_data['Location'].unique())}\n\n"
+                    response += f"- **Locations:** {', '.join(cultivar_data['Location'].unique())}\n"
+                    
+                    # Add environmental context if available
+                    if historical_data_available and 'Year' in cultivar_data.columns and 'Location' in cultivar_data.columns:
+                        sample_location = cultivar_data['Location'].iloc[0]
+                        sample_year = int(cultivar_data['Year'].iloc[0])
+                        env_data = db_manager.get_historical_data_for_location_year(sample_location, sample_year, 'growing_season')
+                        if not env_data.empty:
+                            if 'Temperature' in env_data.columns:
+                                avg_temp = env_data['Temperature'].iloc[0]
+                                response += f"- **Growing season temp:** {avg_temp:.1f}°C (sample year/location)\n"
+                            if 'Total_Precipitation_mm' in env_data.columns:
+                                total_precip = env_data['Total_Precipitation_mm'].iloc[0] * 153  # Approximate growing season days
+                                response += f"- **Growing season precip:** {total_precip:.0f}mm (sample year/location)\n"
+                    
+                    response += "\n"
         
         # Add overall dataset context
         response += f"**📊 Dataset context:** {len(df)} total records, {df['Year'].min()}-{df['Year'].max()}\n"
         
+        # CRITICAL: If no specific cultivars mentioned but question asks about performance, show top performers
+        performance_keywords = ['perform', 'best', 'top', 'highest', 'yield', 'productive', 'leading']
+        if not mentioned_cultivars and any(keyword in original_question.lower() for keyword in performance_keywords):
+            if 'Cultivar Name' in df.columns and 'Yield' in df.columns:
+                # Get top 5 performing cultivars by average yield
+                top_performers = df.groupby('Cultivar Name')['Yield'].mean().sort_values(ascending=False).head(5)
+                response += f"\n**🏆 Top Performing Cultivars:**\n"
+                for cultivar, avg_yield in top_performers.items():
+                    cultivar_data = df[df['Cultivar Name'] == cultivar]
+                    trial_count = len(cultivar_data)
+                    response += f"- **{cultivar}**: {avg_yield:.1f} kg/ha average ({trial_count} trials)\n"
+                    
+                    # Add market class if available
+                    if 'Market Class' in cultivar_data.columns:
+                        market_class = cultivar_data['Market Class'].dropna().iloc[0] if not cultivar_data['Market Class'].dropna().empty else None
+                        if market_class:
+                            response += f"  - Market class: {market_class}\n"
+                    
+                    # Add disease resistance if available
+                    resistance_traits = []
+                    for col in ['Common Mosaic Virus R1', 'Common Mosaic Virus R15', 'Anthracnose R17', 'Anthracnose R23', 'Anthracnose R73', 'Common Blight']:
+                        if col in cultivar_data.columns:
+                            resistance = cultivar_data[col].dropna().iloc[0] if not cultivar_data[col].dropna().empty else None
+                            if resistance and str(resistance).upper() == 'R':
+                                trait_name = col.replace('Common Mosaic Virus R1', 'CMV R1').replace('Common Mosaic Virus R15', 'CMV R15').replace('Anthracnose R17', 'Anth R17').replace('Anthracnose R23', 'Anth R23').replace('Anthracnose R73', 'Anth R73').replace('Common Blight', 'CB')
+                                resistance_traits.append(trait_name)
+                    
+                    if resistance_traits:
+                        response += f"  - Disease resistance: {', '.join(resistance_traits)}\n"
+                
+                response += "\n"
+        
         # Add comparison insights if multiple cultivars or filtering
-        if len(mentioned_cultivars) > 1:
+        elif len(mentioned_cultivars) > 1:
             response += f"**🔍 Comparison available** between {len(mentioned_cultivars)} cultivars\n"
         elif 'white bean' in original_question.lower() or 'coloured bean' in original_question.lower():
             bean_type = 'white bean' if 'white bean' in original_question.lower() else 'coloured bean'
@@ -216,17 +298,9 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         if mentioned_cultivars:
             response += f"**🌱 Cultivars mentioned:** {', '.join([str(c) for c in mentioned_cultivars])}\n\n"
         
-        response += f"**📊 Main Dataset:** {len(df)} records from Ontario bean trials\n"
+        response += f"**📊 Dataset:** {len(df)} records from Ontario bean trials\n"
         response += f"**📅 Years:** {df['Year'].min()}-{df['Year'].max()}\n"
-        response += f"**📍 Locations:** {', '.join(df['Location'].dropna().unique())}\n"
-        
-        # Add historical data information if available
-        if not df_hist.empty:
-            response += f"**📚 Historical Dataset:** {len(df_hist)} additional records for context\n"
-            if 'Cultivar Name' in df_hist.columns:
-                hist_cultivars = df_hist['Cultivar Name'].dropna().nunique()
-                response += f"**🌱 Historical cultivars:** {hist_cultivars}\n"
-        response += f"\n"
+        response += f"**📍 Locations:** {', '.join(df['Location'].dropna().unique())}\n\n"
         
         # Add summary statistics
         if 'Cultivar Name' in df.columns:
@@ -245,14 +319,27 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
             max_maturity = df['Maturity'].max()
             response += f"**⏰ Maturity range:** {min_maturity:.0f} - {max_maturity:.0f} days (avg: {avg_maturity:.1f})\n"
         
-        response += f"\n**💡 Tip:** Ask for a chart or visualization to see the data graphically!\n"
+        # CRITICAL: If no specific cultivars mentioned but question asks about performance, show top performers
+        performance_keywords = ['perform', 'best', 'top', 'highest', 'yield', 'productive', 'leading']
+        if not mentioned_cultivars and any(keyword in original_question.lower() for keyword in performance_keywords):
+            if 'Cultivar Name' in df.columns and 'Yield' in df.columns:
+                # Get top 5 performing cultivars by average yield
+                top_performers = df.groupby('Cultivar Name')['Yield'].mean().sort_values(ascending=False).head(5)
+                response += f"\n**🏆 Top Performing Cultivars:**\n"
+                for cultivar, avg_yield in top_performers.items():
+                    cultivar_data = df[df['Cultivar Name'] == cultivar]
+                    trial_count = len(cultivar_data)
+                    response += f"- **{cultivar}**: {avg_yield:.1f} kg/ha average ({trial_count} trials)\n"
+                response += "\n"
+        
+        response += f"**💡 Tip:** Ask for a chart or visualization to see the data graphically!\n"
         
         return response, response, {}
 
-# Function schema for OpenAI function calling
+# Enhanced function schema for OpenAI function calling with new data capabilities
 function_schema = {
     "name": "query_bean_data",
-    "description": "Query the Ontario bean trial dataset for cultivar performance, yield data, maturity information, and location-specific results. Use this when users ask about specific bean varieties, yields, growing conditions, or want to compare cultivars.",
+    "description": "Query the enhanced Ontario bean trial dataset for comprehensive cultivar analysis including performance metrics, breeding characteristics, disease resistance, environmental context, and visualizations. Use this when users ask about bean varieties, breeding information, disease resistance, environmental factors, or want comparisons and charts.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -274,11 +361,23 @@ function_schema = {
             },
             "trait": {
                 "type": "string",
-                "description": "Specific trait to analyze (e.g., 'yield', 'maturity', 'lodging') (optional)"
+                "description": "Specific trait to analyze (e.g., 'yield', 'maturity', 'harvestability', 'disease_resistance') (optional)"
+            },
+            "market_class": {
+                "type": "string",
+                "description": "Market class filter (e.g., 'White Navy', 'Black', 'Kidney', 'Pinto') (optional)"
+            },
+            "disease_resistance": {
+                "type": "string",
+                "description": "Disease resistance trait (e.g., 'CMV', 'Anthracnose', 'Common Blight') (optional)"
             },
             "analysis_type": {
                 "type": "string",
-                "description": "Type of analysis requested (e.g., 'comparison', 'summary', 'chart', 'trend') (optional)"
+                "description": "Type of analysis requested (e.g., 'comparison', 'summary', 'chart', 'trend', 'breeding_analysis', 'environmental_context') (optional)"
+            },
+            "include_environmental": {
+                "type": "boolean",
+                "description": "Whether to include environmental/weather context in the analysis (optional)"
             }
         },
         "required": ["original_question"]

@@ -19,7 +19,7 @@ class DatabaseManager:
         self._gene_db: Optional[pd.DataFrame] = None
         self._uniprot_db: Optional[pd.DataFrame] = None
         self._bean_data: Optional[pd.DataFrame] = None
-        self._bean_historical_data: Optional[pd.DataFrame] = None
+        self._historical_data: Optional[pd.DataFrame] = None
 
         
         # Efficient lookup indices for gene operations
@@ -45,17 +45,17 @@ class DatabaseManager:
     
     @property
     def bean_data(self) -> pd.DataFrame:
-        """Lazy-loaded bean trial data (main merged data)."""
+        """Lazy-loaded bean trial data."""
         if self._bean_data is None:
             self._load_bean_data()
         return self._bean_data
     
     @property
-    def bean_historical_data(self) -> pd.DataFrame:
-        """Lazy-loaded historical bean data."""
-        if self._bean_historical_data is None:
-            self._load_bean_data()
-        return self._bean_historical_data
+    def historical_data(self) -> pd.DataFrame:
+        """Lazy-loaded historical weather data."""
+        if self._historical_data is None:
+            self._load_historical_data()
+        return self._historical_data
     
 
     
@@ -194,86 +194,175 @@ class DatabaseManager:
             raise DatabaseError(f"Failed to load UniProt database: {str(e)}")
     
     def _load_bean_data(self) -> None:
-        """Load the bean trial data from multiple sheets with optimized format preference."""
+        """Load the updated bean trial data with enhanced column mapping."""
         try:
-            # Define CSV paths for both sheets
-            merged_csv_path = settings.merged_data_path.replace('.xlsx', '_merged_data.csv')
-            historical_csv_path = settings.merged_data_path.replace('.xlsx', '_historical.csv')
-            
-            # Load Merged Data sheet
-            if os.path.exists(merged_csv_path):
-                print(f"📈 Loading Merged Data from optimized CSV format: {merged_csv_path}")
-                df_merged = pd.read_csv(merged_csv_path)
+            # Try to load from optimized CSV format first
+            csv_path = settings.merged_data_path.replace('.xlsx', '.csv')
+            if os.path.exists(csv_path):
+                print(f"📈 Loading from optimized CSV format: {csv_path}")
+                df = pd.read_csv(csv_path)
             else:
-                print(f"📊 Loading Merged Data sheet from Excel format: {settings.merged_data_path}")
-                df_merged = pd.read_excel(settings.merged_data_path, sheet_name='Merged Data')
+                print(f"📊 Loading from Excel format: {settings.merged_data_path}")
+                df = pd.read_excel(settings.merged_data_path)
                 
                 # Create optimized CSV for future loads
                 try:
-                    print(f"💾 Creating optimized CSV for Merged Data: {merged_csv_path}")
-                    df_merged.to_csv(merged_csv_path, index=False)
-                    print(f"✅ Saved optimized format: {merged_csv_path}")
+                    print(f"💾 Creating optimized CSV for future loads: {csv_path}")
+                    df.to_csv(csv_path, index=False)
+                    print(f"✅ Saved optimized format: {csv_path}")
                 except Exception as e:
                     print(f"⚠️ Could not save optimized format: {e}")
             
-            # Load Historical sheet
-            if os.path.exists(historical_csv_path):
-                print(f"📈 Loading Historical data from optimized CSV format: {historical_csv_path}")
-                df_historical = pd.read_csv(historical_csv_path)
-            else:
-                print(f"📊 Loading Historical sheet from Excel format: {settings.merged_data_path}")
-                df_historical = pd.read_excel(settings.merged_data_path, sheet_name='Historical')
-                
-                # Create optimized CSV for future loads
-                try:
-                    print(f"💾 Creating optimized CSV for Historical data: {historical_csv_path}")
-                    df_historical.to_csv(historical_csv_path, index=False)
-                    print(f"✅ Saved optimized format: {historical_csv_path}")
-                except Exception as e:
-                    print(f"⚠️ Could not save optimized format: {e}")
+            # Handle new column structure (Merged_Bean_data_update.xlsx format)
+            column_mapping = {
+                'Name': 'Cultivar Name',  # Map 'Name' to 'Cultivar Name' for compatibility
+                'Grow Year': 'Year',       # Map 'Grow Year' to 'Year' for compatibility
+                'Harvestability': 'Dir Harv Suit'  # Map new to old column name
+            }
             
-            # Process the main merged data
-            # Clean and process the data
-            df_merged = df_merged[
-                ~df_merged["Cultivar Name"].astype(str).str.lower().isin(["mean", "cv", "lsd(0.05)"])
-            ]
+            # Apply column mapping for backward compatibility
+            df = df.rename(columns=column_mapping)
             
-            # Convert columns to appropriate types for merged data
-            if "Year" in df_merged.columns:
-                df_merged["Year"] = pd.to_numeric(df_merged["Year"], errors="coerce")
-            if "Yield" in df_merged.columns:
-                df_merged["Yield"] = pd.to_numeric(df_merged["Yield"], errors="coerce")
-            if "Maturity" in df_merged.columns:
-                df_merged["Maturity"] = pd.to_numeric(df_merged["Maturity"], errors="coerce")
-            
-            # Optional: Add lowercase columns for easier filtering
-            if 'bean_type' in df_merged.columns:
-                df_merged['bean_type'] = df_merged['bean_type'].astype(str).str.lower()
-            if 'trial_group' in df_merged.columns:
-                df_merged['trial_group'] = df_merged['trial_group'].astype(str).str.lower()
-            
-            # Process historical data
-            if "Cultivar Name" in df_historical.columns:
-                df_historical = df_historical[
-                    ~df_historical["Cultivar Name"].astype(str).str.lower().isin(["mean", "cv", "lsd(0.05)"])
+            # Clean and process the data - handle both old and new formats
+            cultivar_col = 'Cultivar Name' if 'Cultivar Name' in df.columns else 'Name'
+            if cultivar_col in df.columns:
+                df = df[
+                    ~df[cultivar_col].astype(str).str.lower().isin(["mean", "cv", "lsd(0.05)"])
                 ]
             
-            # Convert numeric columns in historical data if they exist
-            for col in df_historical.columns:
-                if col.lower() in ['year', 'yield', 'maturity']:
-                    df_historical[col] = pd.to_numeric(df_historical[col], errors="coerce")
+            # Convert columns to appropriate types
+            year_col = 'Year' if 'Year' in df.columns else 'Grow Year'
+            if year_col in df.columns:
+                df[year_col] = pd.to_numeric(df[year_col], errors="coerce")
+                if 'Year' not in df.columns:  # Ensure 'Year' column exists for compatibility
+                    df['Year'] = df[year_col]
+                    
+            if 'Yield' in df.columns:
+                df["Yield"] = pd.to_numeric(df["Yield"], errors="coerce")
+            if 'Maturity' in df.columns:
+                df["Maturity"] = pd.to_numeric(df["Maturity"], errors="coerce")
             
-            self._bean_data = df_merged
-            self._bean_historical_data = df_historical
+            # Process enriched data columns
+            if 'Released Year' in df.columns:
+                df['Released Year'] = pd.to_numeric(df['Released Year'], errors="coerce")
             
-            print(f"✅ Loaded {len(self._bean_data)} main bean trial records from Merged Data sheet")
-            print(f"✅ Loaded {len(self._bean_historical_data)} historical bean records from Historical sheet")
+            # Ensure Cultivar Name column exists for compatibility
+            if 'Cultivar Name' not in df.columns and 'Name' in df.columns:
+                df['Cultivar Name'] = df['Name']
+            
+            # Optional: Add lowercase columns for easier filtering
+            if 'bean_type' in df.columns:
+                df['bean_type'] = df['bean_type'].astype(str).str.lower()
+            if 'trial_group' in df.columns:
+                df['trial_group'] = df['trial_group'].astype(str).str.lower()
+            
+            self._bean_data = df
+            print(f"✅ Loaded {len(self._bean_data)} bean trial records with {len(df.columns)} columns")
+            print(f"📊 Enhanced data includes: {', '.join([col for col in ['Pedigree', 'Market Class', 'Released Year'] if col in df.columns])}")
             
         except FileNotFoundError:
             raise DatabaseError(f"Bean dataset not found at {settings.merged_data_path}")
         except Exception as e:
             raise DatabaseError(f"Failed to load bean dataset: {str(e)}")
     
+    def _load_historical_data(self) -> None:
+        """Load the historical weather data for environmental context."""
+        try:
+            # Try to load from optimized CSV format first
+            csv_path = settings.historical_data_path.replace('.xlsx', '.csv')
+            if os.path.exists(csv_path):
+                print(f"📈 Loading historical data from optimized CSV format: {csv_path}")
+                df = pd.read_csv(csv_path)
+            else:
+                print(f"📊 Loading historical data from Excel format: {settings.historical_data_path}")
+                df = pd.read_excel(settings.historical_data_path)
+                
+                # Create optimized CSV for future loads
+                try:
+                    print(f"💾 Creating optimized CSV for future loads: {csv_path}")
+                    df.to_csv(csv_path, index=False)
+                    print(f"✅ Saved optimized format: {csv_path}")
+                except Exception as e:
+                    print(f"⚠️ Could not save optimized format: {e}")
+            
+            # Process the historical data
+            # Convert date column to proper datetime
+            if 'Year_Historical' in df.columns:
+                df['Year_Historical'] = pd.to_datetime(df['Year_Historical'], errors='coerce')
+                df['Year'] = df['Year_Historical'].dt.year  # Extract year for easier merging
+                df['Month'] = df['Year_Historical'].dt.month
+                df['Day'] = df['Year_Historical'].dt.day
+            
+            # Convert coordinate columns to numeric
+            for coord_col in ['longitude', 'latitude']:
+                if coord_col in df.columns:
+                    df[coord_col] = pd.to_numeric(df[coord_col], errors='coerce')
+            
+            # Convert weather variables to numeric
+            weather_columns = [col for col in df.columns if col not in 
+                             ['Location', 'longitude', 'latitude', 'Unnamed: 3', 'Year_Historical', 'Year', 'Month', 'Day']]
+            for col in weather_columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Drop any completely empty rows and unnecessary columns
+            df = df.dropna(how='all')
+            if 'Unnamed: 3' in df.columns:
+                df = df.drop('Unnamed: 3', axis=1)
+            
+            self._historical_data = df
+            print(f"✅ Loaded {len(self._historical_data)} historical weather records with {len(weather_columns)} weather variables")
+            print(f"📊 Weather data covers: {df['Year'].min():.0f}-{df['Year'].max():.0f}")
+            print(f"📍 Historical locations: {', '.join(sorted(df['Location'].dropna().unique()))}")
+            
+        except FileNotFoundError:
+            raise DatabaseError(f"Historical dataset not found at {settings.historical_data_path}")
+        except Exception as e:
+            raise DatabaseError(f"Failed to load historical dataset: {str(e)}")
+
+    def get_historical_data_for_location_year(self, location: str, year: int, aggregate: str = 'growing_season') -> pd.DataFrame:
+        """Get historical weather data for a specific location and year with optional aggregation."""
+        try:
+            hist_data = self.historical_data
+            
+            # Filter by location and year
+            filtered = hist_data[
+                (hist_data['Location'] == location) & 
+                (hist_data['Year'] == year)
+            ].copy()
+            
+            if filtered.empty:
+                return pd.DataFrame()
+            
+            if aggregate == 'growing_season':
+                # Aggregate data for typical bean growing season (May-September)
+                growing_season = filtered[
+                    (filtered['Month'] >= 5) & (filtered['Month'] <= 9)
+                ]
+                if not growing_season.empty:
+                    # Calculate seasonal averages for weather variables
+                    weather_cols = [col for col in growing_season.columns if col not in 
+                                  ['Location', 'longitude', 'latitude', 'Year_Historical', 'Year', 'Month', 'Day']]
+                    aggregated = growing_season[weather_cols].mean().to_frame().T
+                    aggregated['Location'] = location
+                    aggregated['Year'] = year
+                    aggregated['Period'] = 'Growing Season (May-Sep)'
+                    return aggregated
+                    
+            elif aggregate == 'annual':
+                # Annual averages
+                weather_cols = [col for col in filtered.columns if col not in 
+                              ['Location', 'longitude', 'latitude', 'Year_Historical', 'Year', 'Month', 'Day']]
+                aggregated = filtered[weather_cols].mean().to_frame().T
+                aggregated['Location'] = location
+                aggregated['Year'] = year
+                aggregated['Period'] = 'Annual'
+                return aggregated
+            
+            return filtered
+            
+        except Exception as e:
+            print(f"Error getting historical data: {e}")
+            return pd.DataFrame()
 
     
     def is_gene_in_databases(self, gene_name: str) -> bool:

@@ -97,11 +97,11 @@ def process_genes_batch(gene_mentions: List[str], api_key: str = None) -> List[D
                     
                     gene_summaries.append({
                         "name": gene,
-                                "summary": brief_description,
-                                "source": "Literature Reference",
-                                "description": brief_description,
-                                "not_found": True
-                            })
+                                    "summary": brief_description,
+                                    "source": "Literature Reference",
+                                    "description": brief_description,
+                                    "not_found": True
+                                })
                 except Exception as e:
                     # Fallback if LLM call fails
                     fallback_description = f"• **Identifier:** {gene}\n• **Source:** Research literature mention\n• **Status:** Gene information not available in current databases"
@@ -110,8 +110,8 @@ def process_genes_batch(gene_mentions: List[str], api_key: str = None) -> List[D
                         "summary": fallback_description,
                         "source": "Literature Reference",
                         "description": fallback_description,
-                    "not_found": True
-                })
+                        "not_found": True
+                    })
     
     print(f"✅ Batch processed {len(gene_summaries)} genes")
     return gene_summaries
@@ -793,16 +793,22 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "You are a dry bean research analyst reporting to PhD-level researchers.\n"
                                         "You must present only direct statistical findings, comparisons, and evidence-based conclusions using the Ontario trial dataset.\n\n"
                                         
-                                        "⚠️ CRITICAL BEHAVIOR\n"
+                                        "⚠️ CRITICAL BEHAVIOR - ABSOLUTE RULES\n"
                                         "• NEVER provide analysis steps or recommendations\n"
-                                        "• NEVER invent or guess cultivar names (e.g., \"Cultivar A\")\n"
+                                        "• 🚨 CRITICAL: NEVER invent cultivar names like \"Cultivar A\", \"Cultivar B\", \"Cultivar C\", \"Cultivar X\", etc.\n"
+                                        "• 🚨 CRITICAL: ONLY use ACTUAL cultivar names that exist in the dataset (e.g., OAC Rex, AC Pintoba, Black Hawk)\n"
+                                        "• 🚨 CRITICAL: If you don't know specific cultivar names from the data, say \"the top-performing cultivars\" instead\n"
                                         "• NEVER say \"sample data\" — this is the complete dataset\n"
                                         "• NEVER generate vague placeholder values like [specific yield]\n\n"
                                         
                                         "📊 DATA CONTEXT\n"
-                                        "You have access to TWO datasets:\n"
-                                        "1. **Main Dataset**: Current dry bean trial data from Ontario stations with enhanced pedigree information\n"
-                                        "2. **Historical Dataset**: Additional historical cultivar data for context and breeding insights\n\n"
+                                        "You have access to TWO comprehensive datasets:\n"
+                                        "1. **Enhanced Bean Trial Dataset**: Current dry bean trial data from Ontario stations with enriched breeding information including:\n"
+                                        "   - Performance metrics (yield, maturity, harvestability)\n"
+                                        "   - Breeding information (pedigree, market class, release year)\n"
+                                        "   - Disease resistance markers (CMV R1/R15, Anthracnose R17/R23/R73, Common Blight)\n"
+                                        "   - Environmental context from historical weather data\n"
+                                        "2. **Historical Weather Dataset**: Environmental data (2006+) with 15+ weather variables for all trial locations\n\n"
                                         "The valid station abbreviations and names are:\n\n"
                                         "AUBN – Auburn\n"
                                         "BLYT – Blyth\n"
@@ -824,32 +830,37 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "Then provide the best possible insight based on this dataset.\n\n"
                                         
                                         "✅ PERMITTED BEHAVIOR\n"
-                                        "• You may compare cultivars based on numeric traits (e.g., similar yield or maturity)\n"
-                                        "• You may list top-performing cultivars that outperform a target cultivar in the same class\n"
-                                        "• You may reference historical data for pedigree information and breeding context when relevant\n"
+                                        "• You may compare cultivars based on performance metrics (yield, maturity) and breeding characteristics\n"
+                                        "• You may list top-performing cultivars that outperform a target cultivar in the same market class\n"
+                                        "• You may reference pedigree information, release years, and disease resistance profiles\n"
+                                        "• You may incorporate environmental context (temperature, precipitation) for location/year combinations\n"
+                                        "• You may identify cultivars with specific disease resistance combinations for breeding recommendations\n"
                                         "• Only mention data that is NOT in the dataset if the user specifically asks for it\n"
                                         "• Use explicit values and clearly state which cultivars are statistically similar or superior\n\n"
                                         
                                         "📌 OUTPUT RULES\n"
                                         "• Use **bold** for cultivar names and numeric values\n"
                                         "• Report:\n"
-                                        "  - Mean yield (kg/ha), maturity (days), rankings, and significant differences\n"
-                                        "  - Which cultivars are similar in yield/maturity to the target cultivar\n"
-                                        "  - Which cultivars exceed the target statistically\n"
+                                        "  - Performance metrics: yield (kg/ha), maturity (days), harvestability ratings\n"
+                                        "  - Breeding characteristics: market class, release year, pedigree information\n"
+                                        "  - Disease resistance profiles: CMV, Anthracnose, Common Blight resistance\n"
+                                        "  - Environmental factors: growing season temperature and precipitation when relevant\n"
+                                        "  - Statistical comparisons and ranking of similar/superior cultivars\n"
                                         "• Do not mention missing data unless specifically asked\n"
-                                        "• Do not say \"list of cultivars\" — actually name them\n"
+                                        "• Do not say \"list of cultivars\" — actually name them with their characteristics\n"
                                         "• Do not insert placeholders — if data is missing, say so professionally\n\n"
                                         
-                                        "🧪 Example Response\n"
-                                        "The average yield for **Dynasty** across all locations in 2024 was **3,240 kg/ha**.\n"
-                                        "Cultivars with similar yield performance include **Red Hawk** (**3,270 kg/ha**) and **Etna** (**3,200 kg/ha**), with no statistically significant difference based on Tukey's HSD (p > 0.05).\n\n"
-                                        "Higher-performing cultivars include **OAC Rex** (**3,640 kg/ha**) and **AC Pintoba** (**3,580 kg/ha**), both significantly outperforming Dynasty at p < 0.05.\n\n"
+                                        "🧪 Enhanced Example Response\n"
+                                        "**Dynasty** (Market Class: White Navy, Released: 2019) averaged **3,240 kg/ha** across all locations in 2024.\n"
+                                        "Cultivars with similar yield performance include **Red Hawk** (**3,270 kg/ha**, Market Class: Kidney) and **Etna** (**3,200 kg/ha**, Black), with no statistically significant difference based on Tukey's HSD (p > 0.05).\n\n"
+                                        "Higher-performing cultivars include **OAC Rex** (**3,640 kg/ha**, Market Class: White Navy, CMV R1 resistance) and **AC Pintoba** (**3,580 kg/ha**, Market Class: Pinto, Anthracnose R23 resistance), both significantly outperforming Dynasty at p < 0.05.\n\n"
+                                        "Environmental context: During 2024, growing season temperatures averaged **18.5°C** with **450mm** precipitation at WOOD station.\n\n"
                                         "Statistical significance was determined using standard ANOVA methods."
                                     ),
                                 },
                                 {
                                     "role": "user",
-                                    "content": f"Based on the question '{question}', analyze this data:\n\n**MAIN DATASET:**\n{preview}\n\n**HISTORICAL DATA AVAILABLE:**\nHistorical data is also available for additional context and pedigree information. Include relevant historical insights when applicable."
+                                    "content": f"Based on the question '{question}', analyze this data:\n\n**MAIN DATASET:**\n{preview}\n\n**HISTORICAL DATA AVAILABLE:**\nHistorical data is also available for additional context and pedigree information. Include relevant historical insights when applicable.\n\n🚨 REMINDER: Use ONLY the actual cultivar names shown in the data above. DO NOT invent names like 'Cultivar A, B, C' - use the real names from the dataset!"
                                 }
                             ],
                             temperature=0.3,

@@ -30,7 +30,8 @@ class Settings:
         # Data Paths
         self.gene_db_path = os.getenv("GENE_DB_PATH", "../data/NCBI_Filtered_Data_Enriched.xlsx")
         self.uniprot_db_path = os.getenv("UNIPROT_DB_PATH", "../data/uniprotkb_Phaseolus_vulgaris.xlsx")
-        self.merged_data_path = os.getenv("MERGED_DATA_PATH", "../data/Updated_Final_Merged_With_Pedigree.xlsx")
+        self.merged_data_path = os.getenv("MERGED_DATA_PATH", "../data/Merged_Bean_data_update.xlsx")
+        self.historical_data_path = os.getenv("HISTORICAL_DATA_PATH", "../data/Historical_Bean_Data.xlsx")
         
         # API Configuration
         self.cors_origins = self._parse_list(os.getenv("CORS_ORIGINS", "http://localhost:5173"))

@@ -20,7 +20,8 @@ def extract_gene_mentions(text: str, api_key: str = None) -> tuple[list[str], se
     client = create_openai_client(api_key)
     
     system_prompt = (
-        "Based on the user's input, extract and list only the molecular entities—which may include genes, specific metabolites, transcriptomic elements, proteins, enzymes, or any other uniquely named molecular markers—directly implicated in Phaseolus vulgaris research.\n\n"
+        "Based on the user's input, extract and list only the molecular entities—which may include genes, specific metabolites, transcriptomic elements, proteins, enzymes, or any other uniquely named molecular markers—directly implicated in *Phaseolus vulgaris* research.\n\n"
+
         "STRICTLY INCLUDE ONLY:\n"
         "- Exact gene names or IDs following standard or widely accepted nomenclature (e.g., PvP5CS1, Phvul.001G123400, etc.).\n"
         "- Named transcription factors with specific identifiers (e.g., MYB123, bZIP45, NAC072, WRKY33, etc.; not case sensitive).\n"
@@ -29,9 +30,11 @@ def extract_gene_mentions(text: str, api_key: str = None) -> tuple[list[str], se
         "- Named enzyme genes with identifiers (e.g., SOD1, APX2, RBOH, etc.).\n"
         "- Well-known gene names in plant biology, even if short, when explicitly mentioned as genes (e.g., Asp gene, Phg gene, Fin gene, etc.).\n"
         "- Specific metabolites or compounds when mentioned as direct research targets (e.g., chlorophyll, anthocyanin, etc.).\n"
-        "- Specifically named QTLs with clear identifiers (e.g., QTL-1, drought-QTL, resistance-QTL, etc.) - extract only the QTL name, not descriptions.\n"
+        "- Specifically named QTLs with clear identifiers (e.g., QTL-1, drought-QTL, resistance-QTL, etc.) – extract only the QTL name, not descriptions.\n"
         "- Genetic markers or SNPs when mentioned by name (e.g., SNP123, marker_ABC, etc.).\n\n"
-        "EXCLUDE:\n"
+
+        "STRICTLY EXCLUDE:\n"
+        "- Chromosome names or labels (e.g., Pv01, Pv-1, Pv.001, Pv11, etc.).\n"
         "- General descriptive terms (e.g., 'disease resistance', 'stress tolerance', 'high yield').\n"
         "- Common words (e.g., 'gene', 'protein', 'enzyme' without specific identifiers).\n"
         "- Trait names without specific gene identifiers (e.g., 'drought tolerance', 'yield', 'maturity').\n"
@@ -39,6 +42,7 @@ def extract_gene_mentions(text: str, api_key: str = None) -> tuple[list[str], se
         "- Anatomical or developmental terms (e.g., 'root', 'leaf', 'flower').\n"
         "- General biological processes (e.g., 'photosynthesis', 'respiration' without specific gene names).\n"
         "- Long descriptive phrases or sentences.\n\n"
+
         "IMPORTANT: Extract only the actual names/identifiers. Do not include explanatory text or descriptions.\n\n"
         "RESPONSE FORMAT: Return a JSON array of strings, each representing a specific molecular entity name only. If no specific entities are found, return an empty array []."
     )
