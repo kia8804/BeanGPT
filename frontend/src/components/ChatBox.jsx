@@ -48,17 +48,44 @@ function ChatBox({ messages, onSendMessage, isLoading }) {
                   <details>
                     <summary className="cursor-pointer">📄 Sources</summary>
                     <div className="mt-2 space-y-1">
-                      {msg.sources.map((doi, i) => (
-                        <a
-                          key={i}
-                          href={`https://doi.org/${doi}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block text-blue-500 hover:underline"
-                        >
-                          [{i + 1}] {doi}
-                        </a>
-                      ))}
+                      {msg.sources.map((source, i) => {
+                        // Check if this is a web source (format: "Web-1: URL")
+                        const isWebSource = source.startsWith('Web-');
+                        
+                        let citationLabel, sourceUrl, displayText;
+                        
+                        if (isWebSource) {
+                          // Extract citation label and URL from "Web-1: URL" format
+                          const match = source.match(/^(Web-\d+):\s*(.*)$/);
+                          if (match) {
+                            citationLabel = match[1];
+                            sourceUrl = match[2];
+                            displayText = sourceUrl;
+                          } else {
+                            // Fallback if format doesn't match
+                            citationLabel = `Web-${i + 1}`;
+                            sourceUrl = source;
+                            displayText = source;
+                          }
+                        } else {
+                          // Regular DOI source
+                          citationLabel = `${i + 1}`;
+                          sourceUrl = `https://doi.org/${source}`;
+                          displayText = source;
+                        }
+                        
+                        return (
+                          <a
+                            key={i}
+                            href={sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block text-blue-500 hover:underline"
+                          >
+                            [{citationLabel}] {displayText}
+                          </a>
+                        );
+                      })}
                     </div>
                   </details>
                 </div>

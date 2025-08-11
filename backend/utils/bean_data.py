@@ -16,6 +16,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     """
     ENHANCED VERSION: Analyze enriched bean data with historical context and optional chart generation.
     Now includes pedigree, market class, disease resistance, and environmental data.
+    Also performs web search for questions about regions outside Ontario.
     """
     
     # Use database manager to get both bean and historical data
@@ -49,6 +50,66 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
 
     # Get the original question for analysis
     original_question = args.get("original_question", "")
+    
+    # Check if question mentions regions/locations not in the Ontario dataset
+    # Get all unique locations in the dataset for comparison
+    ontario_locations = set(df['Location'].dropna().unique())
+    ontario_location_names = {loc.lower() for loc in ontario_locations}
+    
+    # Add common location variations/mappings from the dataset
+    location_mapping = {
+        'aubn': 'auburn', 'sthm': 'st. thomas', 'st thomas': 'st. thomas',
+        'elor': 'elora', 'wood': 'woodstock', 'winc': 'winchester',
+        'blyth': 'blyth', 'harrow-blyth': 'harrow', 'harrow': 'harrow'
+    }
+    
+    # Add mapped location names to the set
+    for code, name in location_mapping.items():
+        ontario_location_names.add(code.lower())
+        ontario_location_names.add(name.lower())
+    
+    question_lower = original_question.lower()
+    
+    # Look for potential geographic terms that might indicate external regions
+    # These are common geographic indicators that suggest the user is asking about areas beyond Ontario
+    geographic_terms = [
+        'production in', 'production from', 'grown in', 'cultivated in', 'farming in',
+        'yields in', 'performance in', 'grown at', 'production across', 'nationwide',
+        'globally', 'worldwide', 'international', 'country', 'countries', 'region', 'regions'
+    ]
+    
+    has_geographic_context = any(term in question_lower for term in geographic_terms)
+    
+    # Also check for broader scope indicators
+    broader_scope_terms = ['canada', 'canadian', 'nationwide', 'national', 'global', 'world', 'international']
+    has_broader_scope = any(term in question_lower for term in broader_scope_terms)
+    
+    # If the question has geographic context or broader scope, and it's not clearly about Ontario locations only,
+    # then we should supplement with web search
+    is_external_region_query = has_geographic_context or has_broader_scope
+    
+    # Debug logging for region detection
+    print(f"🔍 Question: '{original_question}'")
+    print(f"🔍 Should supplement with web search: {is_external_region_query}")
+    
+    web_context = ""
+    web_sources = []
+    
+    # If question has external geographic context, perform web search to supplement Ontario data
+    if is_external_region_query:
+        print(f"🌐 Detected non-Ontario region query - performing web search")
+        api_key = args.get('api_key')
+        if api_key:
+            try:
+                from .web_search import perform_web_search
+                web_results, sources = perform_web_search(original_question, api_key)
+                web_context = web_results
+                web_sources = sources
+                print(f"🌐 Web search completed - found {len(sources)} sources")
+            except Exception as e:
+                print(f"⚠️ Web search failed: {e}")
+        else:
+            print("⚠️ No API key available for web search")
     
     # Add analysis details based on the question - dynamically detect cultivar names
     def find_mentioned_cultivars(question_text, df):
@@ -96,7 +157,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         # Update the cultivar parameter with the first detected cultivar
         args['cultivar'] = str(mentioned_cultivars[0])
         print(f"🔧 Fixed cultivar parameter: '{args.get('cultivar', 'None')}' -> '{mentioned_cultivars[0]}'")
-            
+    
     # General dynamic disambiguation system
     def detect_and_resolve_ambiguity(question, args, df):
         """
@@ -259,6 +320,17 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                     
                     response += f"\n*Analysis based on {len(location_temps)} locations with weather data.*"
                     
+                    # Add web search context if available
+                    if web_context and web_sources:
+                        response += f"\n---\n\n## 🌐 **Global Context & Current Information**\n\n"
+                        web_response = web_context
+                        for i, source in enumerate(web_sources, 1):
+                            web_citation = f"[Web-{i}]"
+                            clickable_citation = f"[Web-{i}]({source})"
+                            web_response = web_response.replace(web_citation, clickable_citation)
+                        response += web_response
+                        response += f"\n\n*🔗 Web sources are linked above for verification*\n"
+                    
                     return response, response, {}
                 else:
                     return f"**⚠️ No cultivar data found for {hottest_location}**", "", {}
@@ -269,7 +341,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
             print(f"⚠️ Error processing cross-analysis query: {e}")
             # Fall through to normal processing
     
-    # Handle pure weather queries for trial locations
+    # Handle pure weather queries for trial locations (including multi-location comparisons)
     if is_weather_query and args.get('location') and historical_data_available:
         try:
             # Location mapping for weather queries
@@ -280,49 +352,129 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                 'Brussels': None, 'Brusselssels': None, 'Kempton': None, 'Kemptonton': None,
                 'Harrow-Blyth': 'Harrow', 'Exeter': None,
                 # Handle potential variations
-                'AUBN': 'Auburn', 'WOOD': 'Woodstock', 'WINC': 'Winchester', 'STHM': 'St. Thomas'
+                'AUBN': 'Auburn', 'WOOD': 'Woodstock', 'WINC': 'Winchester', 'STHM': 'St. Thomas',
+                'ELOR': 'Elora'
             }
             
-            location = args.get('location')
-            hist_location = location_mapping.get(location, location)
-            if hist_location:
-                hist_data = db_manager.historical_data
-                location_data = hist_data[hist_data['Location'] == hist_location]
+            location_input = args.get('location')
+            print(f"🌍 Processing location input: {location_input}")
+            
+            # Handle multiple locations (comma-separated)
+            locations = [loc.strip() for loc in location_input.split(',')]
+            hist_data = db_manager.historical_data
+            year_filter = args.get('year')
+            
+            weather_response = f"## 🌤️ **Weather Comparison for {len(locations)} Locations**\n\n"
+            
+            location_results = []
+            
+            for location in locations:
+                hist_location = location_mapping.get(location, location)
+                print(f"🔍 Mapping {location} -> {hist_location}")
                 
-                if not location_data.empty:
-                    # Get recent years data (last 5 years)
-                    recent_years = location_data[location_data['Year'] >= (location_data['Year'].max() - 4)]
+                if hist_location:
+                    location_data = hist_data[hist_data['Location'] == hist_location]
                     
-                    # Calculate average conditions
-                    avg_temp = recent_years['Temperature'].mean()
-                    avg_precip = recent_years['Total_Precipitation_mm'].mean() * 365  # Annual estimate
-                    avg_humidity = recent_years['Relative_Humidity_2m_percent'].mean()
+                    # Apply year filter if specified
+                    if year_filter:
+                        location_data = location_data[location_data['Year'] == year_filter]
+                        data_period = f"{year_filter}"
+                    else:
+                        # Get recent years data (last 5 years)
+                        location_data = location_data[location_data['Year'] >= (location_data['Year'].max() - 4)]
+                        data_period = f"{location_data['Year'].min()}-{location_data['Year'].max()}"
                     
-                    weather_response = f"## 🌤️ **Weather Data for {location}**\n\n"
-                    weather_response += f"**📍 Location**: {hist_location} Research Station\n"
-                    weather_response += f"**📊 Data Period**: {location_data['Year'].min()}-{location_data['Year'].max()}\n\n"
-                    weather_response += f"**Recent 5-Year Averages:**\n"
-                    weather_response += f"- **Temperature**: {avg_temp:.1f}°C\n"
-                    weather_response += f"- **Annual Precipitation**: ~{avg_precip:.0f}mm\n"
-                    weather_response += f"- **Relative Humidity**: {avg_humidity:.1f}%\n\n"
-                    
-                    # Add specific temperature info if requested
-                    if 'temperature' in original_question.lower():
-                        temp_range = f"{recent_years['Min_Temperature'].mean():.1f}°C to {recent_years['Max_Temperature'].mean():.1f}°C"
-                        weather_response += f"**🌡️ Temperature Details:**\n"
-                        weather_response += f"- **Average**: {avg_temp:.1f}°C\n"
-                        weather_response += f"- **Typical Range**: {temp_range}\n\n"
-                    
-                    weather_response += f"*This data comes from {len(location_data):,} historical weather records for bean trial research.*\n"
-                    
-                    return weather_response, weather_response, {}
+                    if not location_data.empty:
+                        # Calculate average conditions
+                        avg_temp = location_data['Temperature'].mean()
+                        max_temp = location_data['Max_Temperature'].mean()
+                        min_temp = location_data['Min_Temperature'].mean()
+                        avg_precip = location_data['Total_Precipitation_mm'].mean() * 365  # Annual estimate
+                        avg_humidity = location_data['Relative_Humidity_2m_percent'].mean()
+                        
+                        location_results.append({
+                            'original': location,
+                            'name': hist_location,
+                            'avg_temp': avg_temp,
+                            'max_temp': max_temp,
+                            'min_temp': min_temp,
+                            'precip': avg_precip,
+                            'humidity': avg_humidity,
+                            'period': data_period,
+                            'records': len(location_data)
+                        })
+                        
+                        weather_response += f"### 📍 **{hist_location} Research Station**\n"
+                        weather_response += f"**📊 Data Period**: {data_period}\n"
+                        weather_response += f"**🌡️ Temperature**: Avg {avg_temp:.1f}°C (Range: {min_temp:.1f}°C to {max_temp:.1f}°C)\n"
+                        weather_response += f"**💧 Precipitation**: ~{avg_precip:.0f}mm annually\n"
+                        weather_response += f"**💨 Humidity**: {avg_humidity:.1f}%\n"
+                        weather_response += f"*Based on {len(location_data):,} weather records*\n\n"
+                    else:
+                        weather_response += f"### ❌ **{location} ({hist_location})**\n"
+                        weather_response += f"**No weather data available for {year_filter if year_filter else 'recent years'}**\n\n"
                 else:
-                    return f"**⚠️ Weather data not available for {location}**\n\nAvailable locations: Auburn, Blyth, Elora, Granton, Harrow, Kippen, Monkton, St. Thomas, Thorndale, Winchester, Woodstock", "", {}
-            else:
-                return f"**⚠️ Weather data not available for {location}**\n\nAvailable locations: Auburn, Blyth, Elora, Granton, Harrow, Kippen, Monkton, St. Thomas, Thorndale, Winchester, Woodstock", "", {}
+                    weather_response += f"### ❌ **{location}**\n"
+                    weather_response += f"**Location mapping not found**\n\n"
+            
+            # Add comparison summary if multiple locations with data
+            if len(location_results) > 1:
+                weather_response += f"## 🏆 **Comparison Summary**\n\n"
                 
+                # Find hottest and coolest
+                hottest = max(location_results, key=lambda x: x['max_temp'])
+                coolest = min(location_results, key=lambda x: x['max_temp'])
+                wettest = max(location_results, key=lambda x: x['precip'])
+                driest = min(location_results, key=lambda x: x['precip'])
+                
+                weather_response += f"**🔥 Highest Max Temperature**: {hottest['name']} ({hottest['max_temp']:.1f}°C)\n"
+                weather_response += f"**❄️ Lowest Max Temperature**: {coolest['name']} ({coolest['max_temp']:.1f}°C)\n"
+                weather_response += f"**💧 Highest Precipitation**: {wettest['name']} ({wettest['precip']:.0f}mm)\n"
+                weather_response += f"**🏜️ Lowest Precipitation**: {driest['name']} ({driest['precip']:.0f}mm)\n\n"
+            
+            # Add bean performance analysis if this is a performance comparison
+            if 'performance' in original_question.lower() or 'bean' in original_question.lower():
+                weather_response += f"## 🫘 **Bean Performance Analysis**\n\n"
+                
+                for result in location_results:
+                    # Get bean trial data for this location
+                    location_bean_data = df[df['Location'].str.contains(result['original'], case=False, na=False)]
+                    
+                    if year_filter:
+                        location_bean_data = location_bean_data[location_bean_data['Year'] == year_filter]
+                    
+                    if not location_bean_data.empty:
+                        avg_yield = location_bean_data['Yield_kg_ha'].mean()
+                        trial_count = len(location_bean_data)
+                        cultivar_count = location_bean_data['Cultivar Name'].nunique()
+                        
+                        weather_response += f"### 📈 **{result['name']} Bean Performance**\n"
+                        weather_response += f"**Average Yield**: {avg_yield:.0f} kg/ha\n"
+                        weather_response += f"**Trials**: {trial_count} trials, {cultivar_count} cultivars\n"
+                        weather_response += f"**Environment**: {result['max_temp']:.1f}°C max temp, {result['precip']:.0f}mm precip\n\n"
+                    else:
+                        weather_response += f"### ❌ **{result['name']}**\n"
+                        weather_response += f"**No bean trial data available for {year_filter if year_filter else 'this location'}**\n\n"
+            
+            weather_response += f"*Historical weather data provided by Environment and Climate Change Canada*\n"
+            
+            # Add web search context if available
+            if web_context and web_sources:
+                weather_response += f"\n---\n\n## 🌐 **Global Context & Current Information**\n\n"
+                web_response = web_context
+                for i, source in enumerate(web_sources, 1):
+                    web_citation = f"[Web-{i}]"
+                    clickable_citation = f"[Web-{i}]({source})"
+                    web_response = web_response.replace(web_citation, clickable_citation)
+                weather_response += web_response
+                weather_response += f"\n\n*🔗 Web sources are linked above for verification*\n"
+            
+            return weather_response, weather_response, {}
+            
         except Exception as e:
             print(f"⚠️ Error processing weather query: {e}")
+            import traceback
+            traceback.print_exc()
     
     if chart_requested and api_key:
         # Generate chart and description - pass cultivar context with environmental info
@@ -603,12 +755,26 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         
         response += f"**💡 Tip:** Ask for a chart or visualization to see the data graphically!\n"
         
+        # Add web search context if available (for non-Ontario region queries)
+        if web_context and web_sources:
+            response += f"\n---\n\n## 🌐 **Global Context & Current Information**\n\n"
+            
+            # Convert web sources to clickable inline citations
+            web_response = web_context
+            for i, source in enumerate(web_sources, 1):
+                web_citation = f"[Web-{i}]"
+                clickable_citation = f"[Web-{i}]({source})"
+                web_response = web_response.replace(web_citation, clickable_citation)
+            
+            response += web_response
+            response += f"\n\n*🔗 Web sources are linked above for verification*\n"
+        
         return response, response, {}
 
 # Enhanced function schema for OpenAI function calling with new data capabilities
 function_schema = {
     "name": "query_bean_data",
-    "description": "Query the enhanced Ontario bean trial dataset AND historical weather data for comprehensive analysis including performance metrics, breeding characteristics, disease resistance, environmental context, and visualizations. ALSO use this for weather/climate queries about trial locations (Auburn, Blyth, Elora, etc.) as it has access to 15+ weather variables including temperature, precipitation, and humidity. Use this when users ask about bean varieties, breeding information, disease resistance, environmental factors, weather data, or want comparisons and charts.",
+    "description": "Query the enhanced Ontario bean trial dataset AND historical weather data for comprehensive analysis including performance metrics, breeding characteristics, disease resistance, environmental context, and visualizations. ALSO use this for weather/climate queries about trial locations (Auburn, Blyth, Elora, etc.) as it has access to 15+ weather variables including temperature, precipitation, and humidity. For questions about bean production/performance in regions OUTSIDE Ontario (e.g., USA, Europe, Brazil, China), this function will automatically supplement Ontario data with current global web search information. Use this when users ask about bean varieties, breeding information, disease resistance, environmental factors, weather data, global bean production, or want comparisons and charts.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -622,7 +788,7 @@ function_schema = {
             },
             "location": {
                 "type": "string", 
-                "description": "Research station location (e.g., WOOD, WINC, STHM, AUBN) (optional)"
+                "description": "Research station location codes. Single location (e.g., WOOD, WINC, STHM, AUBN) or multiple locations separated by commas for comparisons (e.g., 'WOOD, ELOR' for Woodstock vs Elora comparison) (optional)"
             },
             "year": {
                 "type": "integer",

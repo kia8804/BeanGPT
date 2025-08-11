@@ -723,9 +723,10 @@ export default function App() {
 
   // Helper function to check if text contains inline citations
   const hasInlineCitations = (text) => {
-    // Check for patterns like [1], [2], [3] etc.
-    const citationPattern = /\[\d+\]/g;
-    return citationPattern.test(text);
+    // Check for patterns like [1], [2], [3] etc. and [Web-1], [Web-2] etc.
+    const numericCitationPattern = /\[\d+\]/g;
+    const webCitationPattern = /\[Web-\d+\]/g;
+    return numericCitationPattern.test(text) || webCitationPattern.test(text);
   };
 
   return (
@@ -1068,26 +1069,64 @@ export default function App() {
                               <span>References</span>
                             </h3>
                             <div className="space-y-3">
-                              {msg.sources.map((source, index) => {
-                                const formattedSource = source.replace('_', '/', 1);
-                                const doiUrl = source.startsWith('http') ? source : `https://doi.org/${formattedSource}`;
-                                return (
-                                  <div key={index} className="flex items-start space-x-3">
-                                    <span className="font-bold text-blue-600 dark:text-blue-400 text-sm mt-0.5">
-                                      [{index + 1}]
-                                    </span>
-                                    <a 
-                                      href={doiUrl}
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      className="flex-1 inline-flex items-center space-x-2 text-blue-600 dark:text-blue-400 hover:underline text-sm group"
-                                    >
-                                      <span className="break-all">{source}</span>
-                                      <FaExternalLinkAlt className="text-xs opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
-                                    </a>
-                                  </div>
-                                );
-                              })}
+                              {(() => {
+                                // Separate web sources from DOI sources for proper numbering
+                                const doiSources = [];
+                                const webSources = [];
+                                
+                                msg.sources.forEach((source, index) => {
+                                  if (source.startsWith('Web-')) {
+                                    webSources.push({ source, originalIndex: index });
+                                  } else {
+                                    doiSources.push({ source, originalIndex: index });
+                                  }
+                                });
+                                
+                                return msg.sources.map((source, index) => {
+                                  const isWebSource = source.startsWith('Web-');
+                                  
+                                  let citationLabel, sourceUrl, displayText;
+                                  
+                                  if (isWebSource) {
+                                    // Extract citation label and URL from "Web-1: URL" format
+                                    const match = source.match(/^(Web-\d+):\s*(.*)$/);
+                                    if (match) {
+                                      citationLabel = match[1];
+                                      sourceUrl = match[2];
+                                      displayText = sourceUrl;
+                                    } else {
+                                      // Fallback if format doesn't match
+                                      citationLabel = `Web-${webSources.findIndex(ws => ws.originalIndex === index) + 1}`;
+                                      sourceUrl = source;
+                                      displayText = source;
+                                    }
+                                  } else {
+                                    // Regular DOI source - number sequentially within DOI sources
+                                    const doiIndex = doiSources.findIndex(ds => ds.originalIndex === index);
+                                    citationLabel = `${doiIndex + 1}`;
+                                    const formattedSource = source.replace('_', '/', 1);
+                                    sourceUrl = source.startsWith('http') ? source : `https://doi.org/${formattedSource}`;
+                                    displayText = source;
+                                  }
+                                  
+                                  return (
+                                    <div key={index} className="flex items-start space-x-3">
+                                      <span className="font-bold text-blue-600 dark:text-blue-400 text-sm mt-0.5">
+                                        [{citationLabel}]
+                                      </span>
+                                      <a 
+                                        href={sourceUrl}
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="flex-1 inline-flex items-center space-x-2 text-blue-600 dark:text-blue-400 hover:underline text-sm group"
+                                      >
+                                        <span className="break-all">{displayText}</span>
+                                        <FaExternalLinkAlt className="text-xs opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                                      </a>
+                                    </div>
+                                  );
+                                });
+                              })()}
                             </div>
                           </div>
                         )}

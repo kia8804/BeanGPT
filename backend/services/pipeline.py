@@ -283,6 +283,8 @@ def query_openai(context: str, source_list: List[str], question: str, conversati
         "Your goal is to provide expert-level, evidence-backed, and mechanistically detailed responses for researchers, breeders, "
         "pathologists, and institutional stakeholders.\n\n"
         
+        "**Platform Attribution:** This system was developed by Kiarash Mirkamandari, an AI researcher at the Dry Bean Breeding & Computational Biology Program.\n\n"
+        
         "Your specialization spans:\n"
         "• Quantitative genetics and marker-assisted breeding\n"
         "• Gene/QTL discovery and regulatory mechanisms\n"
@@ -312,8 +314,9 @@ def query_openai(context: str, source_list: List[str], question: str, conversati
         "Use **bold** for: gene names, QTLs, numeric values, traits, cultivar names\n"
         "Use *italics* for: species names and scientific terms\n"
         "Use bullet points and section headers\n"
-        "Use inline citations like [1], [2] only if based on retrieved context\n"
-        "Do not include a reference list at the end\n\n"
+        "Use inline citations: [1], [2] for scientific literature and [Web-1], [Web-2] for web sources\n"
+        "Prioritize current web information when available, supplement with scientific literature\n"
+        "Do not include a reference list at the end - citations will be handled automatically\n\n"
         
         "🚫 **Do NOT:**\n"
         "• Dumb down responses — always assume technical expertise unless told otherwise\n"
@@ -363,7 +366,7 @@ def query_openai(context: str, source_list: List[str], question: str, conversati
             "• Use **bold** for gene names, traits, markers, and numeric values\n"
             "• Use *italics* for scientific terms and species names\n"
             "• Use section headers and bullet points for clarity\n"
-            "• Use inline citations in the format [1], [2] — no reference list needed\n"
+            "• Use inline citations: [1], [2] for literature, [Web-1], [Web-2] for web sources\n"
             "• Maintain a clean, professional tone suitable for expert researchers\n\n"
             
             "✅ **Example Structure**\n"
@@ -406,7 +409,7 @@ def query_openai(context: str, source_list: List[str], question: str, conversati
     )
     return response.choices[0].message.content.strip()
 
-def query_openai_stream(context: str, source_list: List[str], question: str, conversation_history: List[Dict] = None, api_key: str = None):
+def query_openai_stream(context: str, source_list: List[str], question: str, conversation_history: List[Dict] = None, api_key: str = None, include_web_search: bool = True):
     # Create client with user-provided API key
     from utils.openai_client import create_openai_client
     client = create_openai_client(api_key)
@@ -416,6 +419,8 @@ def query_openai_stream(context: str, source_list: List[str], question: str, con
         "You are a scientific expert platform focused on dry bean (*Phaseolus vulgaris*) genetics, breeding, and multiomics. "
         "Your goal is to provide expert-level, evidence-backed, and mechanistically detailed responses for researchers, breeders, "
         "pathologists, and institutional stakeholders.\n\n"
+        
+        "**Platform Attribution:** This system was developed by Kiarash Mirkamandari, an AI researcher at the Dry Bean Breeding & Computational Biology Program.\n\n"
         
         "Your specialization spans:\n"
         "• Quantitative genetics and marker-assisted breeding\n"
@@ -446,8 +451,9 @@ def query_openai_stream(context: str, source_list: List[str], question: str, con
         "Use **bold** for: gene names, QTLs, numeric values, traits, cultivar names\n"
         "Use *italics* for: species names and scientific terms\n"
         "Use bullet points and section headers\n"
-        "Use inline citations like [1], [2] only if based on retrieved context\n"
-        "Do not include a reference list at the end\n\n"
+        "Use inline citations: [1], [2] for scientific literature and [Web-1], [Web-2] for web sources\n"
+        "Prioritize current web information when available, supplement with scientific literature\n"
+        "Do not include a reference list at the end - citations will be handled automatically\n\n"
         
         "🚫 **Do NOT:**\n"
         "• Dumb down responses — always assume technical expertise unless told otherwise\n"
@@ -497,7 +503,7 @@ def query_openai_stream(context: str, source_list: List[str], question: str, con
             "• Use **bold** for gene names, traits, markers, and numeric values\n"
             "• Use *italics* for scientific terms and species names\n"
             "• Use section headers and bullet points for clarity\n"
-            "• Use inline citations in the format [1], [2] — no reference list needed\n"
+            "• Use inline citations: [1], [2] for literature, [Web-1], [Web-2] for web sources\n"
             "• Maintain a clean, professional tone suitable for expert researchers\n\n"
             
             "✅ **Example Structure**\n"
@@ -760,7 +766,9 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                         "- Questions about trial results or research station data\n"
                         "- Weather/environmental questions about trial locations (Auburn, Blyth, Elora, etc.)\n"
                         "- Temperature, precipitation, humidity data for research stations\n"
+                        "- Location comparisons (e.g., 'Compare Elora and Woodstock')\n"
                         "- Any question that mentions bean characteristics, locations, or years\n\n"
+                        "IMPORTANT FOR LOCATION COMPARISONS: When the user asks to compare multiple locations (e.g., 'Compare Elora and Woodstock'), extract ALL location names and pass them as comma-separated codes in the location parameter (e.g., 'ELOR, WOOD').\n\n"
                         "The user's question mentions bean-related terms or trial locations, so you should call the function."
                     )
                 }
@@ -840,9 +848,11 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "WINC – Winchester\n"
                                         "WOOD – Woodstock\n\n"
                                         
-                                        "If the user asks for global data, respond with:\n"
-                                        "\"Only Ontario research station data is available.\"\n"
-                                        "Then provide the best possible insight based on this dataset.\n\n"
+                                        "If the user asks for global data:\n"
+                                        "• If the dataset response includes web search context with citations like [Web-1](url), preserve these EXACTLY as provided\n"
+                                        "• If no web context is available, respond with: \"Only Ontario research station data is available.\"\n"
+                                        "• Always provide the best possible insight based on the available data\n"
+                                        "• PRESERVE any web citations and clickable links [Web-1](url) format from the dataset response\n\n"
                                         
                                         "✅ PERMITTED BEHAVIOR\n"
                                         "• You may compare cultivars based on performance metrics (yield, maturity) and breeding characteristics\n"
@@ -855,6 +865,8 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         
                                         "📌 OUTPUT RULES\n"
                                         "• Use **bold** for cultivar names and numeric values\n"
+                                        "• PRESERVE web search sections: If the dataset includes sections like '## 🌐 **Global Context & Current Information**', include them EXACTLY as provided\n"
+                                        "• PRESERVE web citations: Keep clickable links like [Web-1](url) exactly as they appear in the dataset\n"
                                         "• Report:\n"
                                         "  - Performance metrics: yield (kg/ha), maturity (days), harvestability ratings\n"
                                         "  - Breeding characteristics: market class, release year, pedigree information\n"
@@ -920,14 +932,113 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                 for char in transition_text:
                     yield {"type": "content", "data": char}
         else:
-            # No bean keywords and not genetics - provide simple conversational response
+            # No bean keywords and not genetics - check if web search is needed for current info
+            from utils.web_search import needs_current_info, perform_web_search, create_web_enhanced_response
+            
+            if needs_current_info(question):
+                yield {"type": "progress", "data": {"step": "web_search", "detail": "Searching web for current information..."}}
+                print("🌐 Question requires current information - performing web search...")
+                
+                # Perform web search for current information
+                web_results, source_urls = perform_web_search(question, api_key)
+                
+                if web_results:
+                    # Check if we should also add RAG context for research questions
+                    should_add_rag = any(keyword in question.lower() for keyword in [
+                        "research", "study", "paper", "publication", "genetic", "breeding", "molecular", 
+                        "marker", "trait", "resistance", "gene", "variety development", "cultivar development"
+                    ])
+                    
+                    if should_add_rag:
+                        yield {"type": "progress", "data": {"step": "literature", "detail": "Adding scientific literature context..."}}
+                        
+                        # Generate embeddings and query RAG
+                        embedding_vector = embed_query_openai(question, api_key)
+                        matches = query_zilliz(embedding_vector, api_key)
+                        scores = normalize_scores(matches)
+                        top_sources = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:settings.top_k]
+                        top_dois = [src for src, _ in top_sources]
+                        
+                        rag_context, rag_source_list = get_rag_context_from_matches(matches, top_dois)
+                        
+                        if rag_context.strip():
+                            # Combine web and RAG context
+                            from utils.web_search import combine_web_and_rag_context
+                            enhanced_context = combine_web_and_rag_context(web_results, rag_context, question)
+                            
+                            # Combine sources
+                            formatted_sources = []
+                            for i, url in enumerate(source_urls, 1):
+                                formatted_sources.append(f"Web-{i}: {url}")
+                            formatted_sources.extend(rag_source_list)
+                            
+                            yield {"type": "progress", "data": {"step": "synthesis", "detail": "Combining web and literature sources..."}}
+                            
+                            # Stream response using combined context
+                            full_response = ""
+                            for chunk in query_openai_stream(enhanced_context, formatted_sources, question, conversation_history, api_key, include_web_search=False):
+                                full_response += chunk
+                                yield {"type": "content", "data": chunk}
+                            
+                            # Send metadata with combined sources
+                            yield {
+                                "type": "metadata",
+                                "data": {
+                                    "sources": formatted_sources,
+                                    "genes": [],
+                                    "full_markdown_table": "",
+                                    "suggested_questions": [
+                                        "What bean varieties perform best in Ontario?",
+                                        "Show me yield data for black beans", 
+                                        "Tell me about current bean market trends"
+                                    ]
+                                }
+                            }
+                            return
+                    
+                    yield {"type": "progress", "data": {"step": "synthesis", "detail": "Generating web-enhanced response..."}}
+                    
+                    # Create web-enhanced response (web only)
+                    enhanced_response = create_web_enhanced_response(question, web_results, conversation_history, api_key)
+                    
+                    # Stream the enhanced response
+                    for char in enhanced_response:
+                        yield {"type": "content", "data": char}
+                    
+                    # Format web sources properly with Web-X: prefix
+                    formatted_sources = []
+                    for i, url in enumerate(source_urls, 1):
+                        formatted_sources.append(f"Web-{i}: {url}")
+                    
+                    # Send completion metadata with properly formatted web sources
+                    yield {
+                        "type": "metadata",
+                        "data": {
+                            "sources": formatted_sources,
+                            "genes": [],
+                            "full_markdown_table": "",
+                            "suggested_questions": [
+                                "What bean varieties perform best in Ontario?",
+                                "Show me yield data for black beans", 
+                                "Tell me about current bean market trends"
+                            ]
+                        }
+                    }
+                    return
+                else:
+                    print("⚠️ Web search failed, falling back to regular response")
+            
+            # Fallback to simple conversational response
             yield {"type": "progress", "data": {"step": "generation", "detail": "Generating response"}}
             
             # Simple conversational response for non-genetics, non-bean questions
             conversation_messages = [
                 {
                     "role": "system", 
-                    "content": "You are a helpful dry bean research assistant. Provide a brief, friendly response to casual questions. For research questions, mention that you can help with bean breeding data and genetics literature."
+                    "content": ("You are a helpful dry bean research assistant. Provide a brief, friendly response to casual questions. "
+                               "For research questions, mention that you can help with bean breeding data and genetics literature.\n\n"
+                               "**Important:** If asked about who developed or created this system, say it was developed by "
+                               "Kiarash Mirkamandari, an AI researcher at the Dry Bean Breeding & Computational Biology Program.")
                 }
             ]
             
@@ -991,9 +1102,31 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
     
     yield {"type": "progress", "data": {"step": "generation", "detail": "Synthesizing findings with AI"}}
 
+    # Check if web search should be added to RAG context
+    enhanced_context = context
+    combined_sources = source_list.copy()
+    
+    from utils.web_search import needs_current_info, perform_web_search, combine_web_and_rag_context
+    
+    if needs_current_info(question):
+        yield {"type": "progress", "data": {"step": "web_search", "detail": "Adding current web information..."}}
+        print("🌐 RAG query requires current information - performing web search...")
+        web_results, web_sources = perform_web_search(question, api_key)
+        
+        if web_results:
+            enhanced_context = combine_web_and_rag_context(web_results, context, question)
+            # Add web sources to the combined source list with proper formatting
+            web_source_entries = []
+            for i, url in enumerate(web_sources, 1):
+                web_source_entries.append(f"Web-{i}: {url}")
+            combined_sources.extend(web_source_entries)
+            print(f"✅ Enhanced context with web search results and {len(web_sources)} web sources")
+        else:
+            print("⚠️ Web search failed, using RAG context only")
+
     # Stream the response and collect it for gene extraction
     full_response = ""
-    for chunk in query_openai_stream(context, source_list, question, conversation_history, api_key):
+    for chunk in query_openai_stream(enhanced_context, combined_sources, question, conversation_history, api_key, include_web_search=False):
         full_response += chunk
         yield {"type": "content", "data": chunk}
 
@@ -1022,7 +1155,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
     yield {
         "type": "metadata",
         "data": {
-            "sources": source_list,
+            "sources": combined_sources,
             "genes": gene_summaries,
             "full_markdown_table": "",
             "chart_data": {},
@@ -1116,7 +1249,23 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
                 transition_message = "## 🔍 **Dataset Search**\n\nEncountered an issue accessing the cultivar dataset.\n\n---\n\n## 📚 **Research Literature Search**\n\nSearching scientific publications for relevant information...\n\n"
                 should_search_literature = True
         else:
-            # No bean keywords and not genetics - provide simple conversational response
+            # No bean keywords and not genetics - check if web search is needed for current info
+            from utils.web_search import needs_current_info, perform_web_search, create_web_enhanced_response
+            
+            if needs_current_info(question):
+                print("🌐 Question requires current information - performing web search...")
+                
+                # Perform web search for current information
+                web_results, source_urls = perform_web_search(question, api_key)
+                
+                if web_results:
+                    # Create web-enhanced response
+                    enhanced_response = create_web_enhanced_response(question, web_results, conversation_history, api_key)
+                    return enhanced_response, source_urls, [], ""
+                else:
+                    print("⚠️ Web search failed, falling back to regular response")
+            
+            # Fallback to regular conversational response
             conversation_messages = [
                 {
                     "role": "system", 
