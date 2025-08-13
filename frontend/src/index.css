@@ -192,4 +192,76 @@ textarea:focus-visible {
 
 .markdown-content th {
   @apply bg-gray-100 dark:bg-gray-700;
+}
+
+/* Mobile responsiveness fixes */
+@media (max-width: 768px) {
+  /* Prevent horizontal scrolling */
+  html, body {
+    overflow-x: hidden;
+    width: 100%;
+  }
+  
+  /* Ensure containers don't exceed viewport */
+  .container, .max-w-7xl, .max-w-6xl, .max-w-5xl, .max-w-4xl {
+    @apply max-w-full px-4;
+  }
+  
+  /* Fix chat input on mobile */
+  .research-input {
+    @apply text-base; /* Prevents zoom on iOS */
+  }
+  
+  /* Responsive text sizes */
+  .text-6xl { @apply text-4xl; }
+  .text-5xl { @apply text-3xl; }
+  .text-4xl { @apply text-2xl; }
+  .text-3xl { @apply text-xl; }
+  
+  /* Fix button sizes on mobile */
+  .research-button {
+    @apply min-h-[44px] min-w-[44px]; /* iOS touch target size */
+  }
+  
+  /* Responsive padding */
+  .p-8 { @apply p-4; }
+  .p-6 { @apply p-4; }
+  .px-8 { @apply px-4; }
+  .py-8 { @apply py-4; }
+  
+  /* Fix tables on mobile */
+  .markdown-content table {
+    @apply text-sm;
+  }
+  
+  .markdown-content th,
+  .markdown-content td {
+    @apply px-2 py-1;
+  }
+}
+
+/* Tablet responsiveness */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .container {
+    @apply px-6;
+  }
+  
+  .text-6xl { @apply text-5xl; }
+  .text-5xl { @apply text-4xl; }
+}
+
+/* Prevent zoom on form inputs (iOS Safari) */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+textarea,
+select {
+  font-size: 16px !important;
+}
+
+/* Fix for very small screens */
+@media (max-width: 320px) {
+  .text-base { @apply text-sm; }
+  .text-lg { @apply text-base; }
+  .text-xl { @apply text-lg; }
 } 

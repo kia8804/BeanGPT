@@ -4,6 +4,10 @@ from config import settings
 from routes import chat, ping
 import os
 
+# Check if running on Lightsail and use appropriate config
+if os.getenv("LIGHTSAIL_DEPLOYMENT", "false").lower() == "true":
+    from lightsail_config import lightsail_settings as settings
+
 app = FastAPI(
     title="BeanGPT Main Platform API",
     description="API for dry bean genetics research chatbot",
