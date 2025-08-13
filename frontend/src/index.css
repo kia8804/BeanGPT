@@ -264,4 +264,155 @@ select {
   .text-base { @apply text-sm; }
   .text-lg { @apply text-base; }
   .text-xl { @apply text-lg; }
+}
+
+/* Large laptop screens (1440px+) */
+@media (min-width: 1440px) {
+  .container {
+    @apply max-w-7xl mx-auto;
+  }
+}
+
+/* Standard laptop screens (1024px - 1439px) */
+@media (min-width: 1024px) and (max-width: 1439px) {
+  .container {
+    @apply max-w-5xl mx-auto px-6;
+  }
+  
+  /* Adjust text sizes for medium laptops */
+  .text-6xl { @apply text-5xl; }
+  .text-5xl { @apply text-4xl; }
+}
+
+/* Small laptops and large tablets (768px - 1023px) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .container {
+    @apply max-w-4xl mx-auto px-4;
+  }
+  
+  .text-6xl { @apply text-4xl; }
+  .text-5xl { @apply text-3xl; }
+  .text-4xl { @apply text-2xl; }
+  
+  /* Adjust padding for medium screens */
+  .p-8 { @apply p-6; }
+  .px-8 { @apply px-6; }
+  .py-8 { @apply py-6; }
+}
+
+/* Ultra-wide screens (1920px+) */
+@media (min-width: 1920px) {
+  .container {
+    @apply max-w-screen-xl mx-auto;
+  }
+  
+  /* Prevent content from being too spread out */
+  .max-w-4xl { @apply max-w-5xl; }
+  .max-w-3xl { @apply max-w-4xl; }
+}
+
+/* High DPI / Retina displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  /* Ensure crisp text rendering */
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Landscape orientation fixes */
+@media (orientation: landscape) and (max-height: 600px) {
+  /* Reduce vertical padding on short landscape screens */
+  .py-8 { @apply py-4; }
+  .py-6 { @apply py-3; }
+  .py-4 { @apply py-2; }
+  
+  /* Smaller text on short screens */
+  .text-6xl { @apply text-4xl; }
+  .text-5xl { @apply text-3xl; }
+  .text-4xl { @apply text-2xl; }
+}
+
+/* Zoom level adjustments */
+@media (min-width: 1200px) {
+  /* Ensure content doesn't get too wide on zoomed out screens */
+  .prose {
+    @apply max-w-4xl;
+  }
+  
+  /* Better spacing for larger screens */
+  .space-y-6 > * + * {
+    @apply mt-8;
+  }
+}
+
+/* Fix for browser zoom levels */
+.research-card,
+.research-input {
+  /* Use relative units that scale better with zoom */
+  min-height: 2.75rem;
+  box-sizing: border-box;
+}
+
+/* Flexible grid layouts */
+.grid-responsive {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+@media (max-width: 640px) {
+  .grid-responsive {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Better button scaling across screen sizes */
+.btn-responsive {
+  @apply px-4 py-2 text-sm;
+}
+
+@media (min-width: 768px) {
+  .btn-responsive {
+    @apply px-6 py-3 text-base;
+  }
+}
+
+@media (min-width: 1024px) {
+  .btn-responsive {
+    @apply px-8 py-3 text-base;
+  }
+}
+
+/* Prevent layout shifts on different screen sizes */
+.layout-stable {
+  contain: layout style;
+}
+
+/* Better table responsiveness for all screen sizes */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-responsive table {
+  min-width: 100%;
+  white-space: nowrap;
+}
+
+@media (max-width: 1024px) {
+  .table-responsive table {
+    font-size: 0.875rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .table-responsive table {
+    font-size: 0.75rem;
+  }
+  
+  .table-responsive th,
+  .table-responsive td {
+    padding: 0.5rem 0.25rem;
+  }
 } 
