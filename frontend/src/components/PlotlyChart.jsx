@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 const PlotlyChart = ({ chartData, darkMode }) => {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const plotRef = useRef(null);
   const rootRef = useRef(null);
   const [chartKey, setChartKey] = useState(Date.now()); // Unique key for each chart
@@ -10,6 +11,16 @@ const PlotlyChart = ({ chartData, darkMode }) => {
     // Generate new key when chartData changes to force complete re-render
     setChartKey(Date.now());
   }, [chartData]);
+
+  // Handle responsive breakpoints
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const loadPlotly = async () => {
@@ -78,17 +89,61 @@ const PlotlyChart = ({ chartData, darkMode }) => {
 
         config = {
           responsive: true,
-          displayModeBar: true,
-          modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d'],
+          displayModeBar: !isMobile, // Hide toolbar on mobile for cleaner look
+          modeBarButtonsToRemove: isMobile 
+            ? ['pan2d', 'lasso2d', 'select2d', 'zoom2d', 'zoomIn2d', 'zoomOut2d', 'autoScale2d', 'resetScale2d']
+            : ['pan2d', 'lasso2d', 'select2d'],
           displaylogo: false,
+          scrollZoom: !isMobile, // Disable scroll zoom on mobile to prevent conflicts
+          doubleClick: isMobile ? false : 'reset+autosize',
           toImageButtonOptions: {
             format: 'png',
             filename: 'bean_chart',
-            height: 600,
-            width: 1000,
+            height: isMobile ? 400 : 600,
+            width: isMobile ? 600 : 1000,
             scale: 1
           }
         };
+
+        // Mobile-specific layout adjustments
+        if (isMobile && layout) {
+          layout = {
+            ...layout,
+            margin: {
+              l: 40,
+              r: 20,
+              t: 40,
+              b: 40,
+              ...layout.margin
+            },
+            font: {
+              size: 10,
+              ...layout.font
+            },
+            showlegend: layout.showlegend !== false,
+            legend: {
+              orientation: 'h',
+              x: 0,
+              y: -0.2,
+              ...layout.legend
+            }
+          };
+
+          // Adjust axis labels for mobile
+          if (layout.xaxis) {
+            layout.xaxis = {
+              ...layout.xaxis,
+              tickangle: -45,
+              tickfont: { size: 9 }
+            };
+          }
+          if (layout.yaxis) {
+            layout.yaxis = {
+              ...layout.yaxis,
+              tickfont: { size: 9 }
+            };
+          }
+        }
 
         // THOROUGH cleanup before creating new chart
         if (plotRef.current) {
@@ -153,14 +208,14 @@ const PlotlyChart = ({ chartData, darkMode }) => {
   }
 
   return (
-    <div key={chartKey} className={`p-4 rounded-lg border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
+    <div key={chartKey} className={`${isMobile ? 'p-2' : 'p-4'} rounded-lg border ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-gray-200'}`}>
       <div 
         ref={plotRef} 
         key={`plot-${chartKey}`}
         style={{ 
-          height: '450px', 
+          height: isMobile ? '300px' : '450px', 
           width: '100%',
-          minHeight: '400px',
+          minHeight: isMobile ? '250px' : '400px',
           maxWidth: '100%'
         }}
         className="plotly-chart-container"

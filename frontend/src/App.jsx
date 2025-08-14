@@ -3,7 +3,8 @@ import {
   FaDna, FaFlask, FaMoon, FaSun, FaPaperPlane, FaSpinner, 
   FaChevronDown, FaChevronUp, FaHistory, FaBookmark, 
   FaSearch, FaChartBar, FaDatabase, FaFileAlt, FaMicroscope,
-  FaCaretRight, FaExternalLinkAlt, FaClipboard, FaBook, FaTimes
+  FaCaretRight, FaExternalLinkAlt, FaClipboard, FaBook, FaTimes,
+  FaBars, FaArrowLeft
 } from 'react-icons/fa';
 import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
@@ -64,7 +65,13 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(() =>
     window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
   );
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  
+  // Mobile-first responsive state management
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isTablet, setIsTablet] = useState(window.innerWidth >= 768 && window.innerWidth < 1024);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(window.innerWidth < 1024);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  
   const [currentSession, setCurrentSession] = useState('Research Session 1');
   const chatEndRef = useRef(null);
   const [showSuggestedQuestions, setShowSuggestedQuestions] = useState({});
@@ -91,6 +98,48 @@ export default function App() {
       window.handleApiKeyError();
     }
   };
+
+  // Handle responsive breakpoints
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      setIsMobile(width < 768);
+      setIsTablet(width >= 768 && width < 1024);
+      
+      // Auto-collapse sidebar on mobile/tablet
+      if (width < 1024) {
+        setSidebarCollapsed(true);
+        setShowMobileSidebar(false);
+      } else {
+        setSidebarCollapsed(false);
+        setShowMobileSidebar(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial call
+    
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Close mobile sidebar when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showMobileSidebar && !event.target.closest('.mobile-sidebar') && !event.target.closest('.mobile-menu-button')) {
+        setShowMobileSidebar(false);
+      }
+    };
+
+    if (showMobileSidebar) {
+      document.addEventListener('touchstart', handleClickOutside);
+      document.addEventListener('click', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [showMobileSidebar]);
 
   // Custom styles for better prose formatting
   useEffect(() => {
@@ -730,17 +779,35 @@ export default function App() {
   };
 
   return (
-    <div className={`h-screen w-screen flex ${darkMode ? 'bg-slate-950' : 'bg-gray-50'} transition-all duration-300 overflow-hidden`} style={{
+    <div className={`h-screen w-screen flex ${darkMode ? 'bg-slate-950' : 'bg-gray-50'} transition-all duration-300 overflow-hidden relative`} style={{
       height: '100vh',
       background: darkMode ? '#020617' : '#f9fafb',
       overscrollBehavior: 'none'
     }}>
+      {/* Mobile Sidebar Overlay */}
+      {showMobileSidebar && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setShowMobileSidebar(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-16' : 'w-80'} transition-all duration-300 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'} border-r flex flex-col`}>
+      <div className={`
+        ${isMobile || isTablet 
+          ? `fixed top-0 left-0 h-full z-50 transform transition-transform duration-300 ${
+              showMobileSidebar ? 'translate-x-0' : '-translate-x-full'
+            } w-80 mobile-sidebar`
+          : `${sidebarCollapsed ? 'w-16' : 'w-80'} transition-all duration-300`
+        } 
+        ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'} 
+        ${isMobile || isTablet ? 'border-r shadow-2xl' : 'border-r'} 
+        flex flex-col
+      `}>
         {/* Sidebar Header */}
         <div className="p-4 border-b border-gray-200 dark:border-slate-800">
           <div className="flex items-center justify-between">
-            {!sidebarCollapsed && (
+            {(!sidebarCollapsed || (isMobile || isTablet)) && (
               <div className="flex items-center space-x-3">
                 <img 
                   src={`${import.meta.env.BASE_URL}images/UniversityOfGuelphLogo.png`} 
@@ -753,17 +820,31 @@ export default function App() {
                 </div>
               </div>
             )}
+            <div className="flex items-center space-x-2">
+              {/* Mobile close button */}
+              {(isMobile || isTablet) && showMobileSidebar && (
+                <button
+                  onClick={() => setShowMobileSidebar(false)}
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors lg:hidden"
+                >
+                  <FaTimes className="text-gray-500" />
+                </button>
+              )}
+              {/* Desktop collapse button */}
+              {!isMobile && !isTablet && (
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
             >
               <FaCaretRight className={`text-gray-500 transition-transform ${sidebarCollapsed ? '' : 'rotate-180'}`} />
             </button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Session Info */}
-        {!sidebarCollapsed && (
+        {(!sidebarCollapsed || (isMobile || isTablet)) && (
           <div className="p-4 border-b border-gray-200 dark:border-slate-800">
             <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-slate-400">
               <FaFlask className="text-blue-500" />
@@ -776,7 +857,7 @@ export default function App() {
         )}
 
         {/* Quick Actions */}
-        {!sidebarCollapsed && (
+        {(!sidebarCollapsed || (isMobile || isTablet)) && (
           <div className="p-4 border-b border-gray-200 dark:border-slate-800">
             <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">Quick Research</h3>
             <div className="space-y-2">
@@ -795,7 +876,7 @@ export default function App() {
         )}
 
         {/* About Us Section */}
-        {!sidebarCollapsed && (
+        {(!sidebarCollapsed || (isMobile || isTablet)) && (
           <div className="p-4 flex-1">
             <h3 className="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-3">About</h3>
             <div className="space-y-4">
@@ -845,7 +926,7 @@ export default function App() {
         )}
 
         {/* Dry Bean Breeding Program Logo */}
-        {!sidebarCollapsed && (
+        {(!sidebarCollapsed || (isMobile || isTablet)) && (
           <div className="px-4 py-2">
             <div className="flex justify-center">
               <img 
@@ -858,7 +939,7 @@ export default function App() {
         )}
 
         {/* Program Credit */}
-        {!sidebarCollapsed && (
+        {(!sidebarCollapsed || (isMobile || isTablet)) && (
           <div className="px-4 py-2">
             <div className="text-center">
                 <a 
@@ -899,25 +980,49 @@ export default function App() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className={`flex-1 flex flex-col min-h-0 ${isMobile || isTablet ? 'w-full' : ''}`}>
         {/* Header */}
-        <div className={`flex-shrink-0 p-6 border-b ${darkMode ? 'border-slate-800 bg-slate-900/50' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
+        <div className={`flex-shrink-0 ${isMobile ? 'p-4' : 'p-6'} border-b ${darkMode ? 'border-slate-800 bg-slate-900/50' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Main Platform</h2>
-              <p className="text-gray-600 dark:text-slate-400 text-sm mt-1">
-                Dry Bean Breeding & Computational Biology
-              </p>
+            <div className="flex items-center space-x-3">
+              {/* Mobile menu button */}
+              {(isMobile || isTablet) && (
+                <button
+                  onClick={() => {
+                    console.log('Mobile menu clicked, current state:', showMobileSidebar);
+                    setShowMobileSidebar(true);
+                  }}
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors mobile-menu-button"
+                >
+                  <FaBars className="text-gray-600 dark:text-slate-400" />
+                </button>
+              )}
+              <div>
+                <h2 className={`${isMobile ? 'text-xl' : 'text-2xl'} font-bold text-gray-900 dark:text-white`}>
+                  {isMobile ? 'BeanGPT' : 'Main Platform'}
+                  {/* Debug indicator */}
+                  <span className="text-xs text-red-500 ml-2">
+                    {isMobile ? '📱' : isTablet ? '📟' : '💻'}
+                  </span>
+                </h2>
+                {!isMobile && (
+                  <p className="text-gray-600 dark:text-slate-400 text-sm mt-1">
+                    Dry Bean Breeding & Computational Biology
+                  </p>
+                )}
+              </div>
             </div>
             
-            <div className="flex items-center space-x-6">
-              {/* API Key Input - Compact in Header */}
+            <div className={`flex items-center ${isMobile ? 'space-x-2' : 'space-x-6'}`}>
+              {/* API Key Input - Responsive */}
+              <div className={isMobile ? 'hidden' : 'block'}>
               <ApiKeyInput 
                 darkMode={darkMode} 
                 onApiKeyChange={handleApiKeyChange}
               />
+              </div>
               
-              <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-slate-400">
+              <div className={`flex items-center space-x-2 ${isMobile ? 'text-xs' : 'text-sm'} text-gray-500 dark:text-slate-400`}>
                 <div className={`w-2 h-2 rounded-full ${
                   isLoading ? 'bg-yellow-400 animate-pulse' : 
                   isStreaming ? 'bg-green-400 animate-pulse' : 
@@ -926,29 +1031,39 @@ export default function App() {
                   apiKeyStatus === 'invalid' ? 'bg-red-400 animate-pulse' : 
                   'bg-red-400'
                 }`}></div>
-                <span>{
-                  isLoading ? 'Processing' : 
+                <span className={isMobile ? 'hidden sm:inline' : ''}>
+                  {isLoading ? 'Processing' : 
                   isStreaming ? 'Generating' : 
                   isPostProcessing ? 'Analyzing' : 
                   apiKeyStatus === 'valid' ? 'Ready' : 
                   apiKeyStatus === 'invalid' ? 'Invalid API Key' : 
-                  'API Key Required'
-                }</span>
+                  'API Key Required'}
+                </span>
               </div>
             </div>
           </div>
+          
+          {/* Mobile API Key Input */}
+          {isMobile && (
+            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-slate-700">
+              <ApiKeyInput 
+                darkMode={darkMode} 
+                onApiKeyChange={handleApiKeyChange}
+              />
+            </div>
+          )}
         </div>
 
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto min-h-0">
-          <div className="p-6 space-y-6">
-            <div className="max-w-6xl mx-auto space-y-6">
+          <div className={`${isMobile ? 'p-3' : 'p-6'} space-y-4`}>
+            <div className={`${isMobile ? 'max-w-full' : 'max-w-6xl'} mx-auto space-y-4`}>
             {messages.map((msg, idx) => (
               <div
                 key={idx}
                 className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <div className={`max-w-[85%] ${msg.sender === 'user' ? 'order-2' : 'order-1'}`}>
+                <div className={`${isMobile ? 'max-w-[95%]' : 'max-w-[85%]'} ${msg.sender === 'user' ? 'order-2' : 'order-1'}`}>
                   {/* Message Header */}
                   <div className={`flex items-center space-x-2 mb-2 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
@@ -969,7 +1084,7 @@ export default function App() {
                   </div>
 
                   {/* Message Content */}
-                  <div className={`p-5 rounded-2xl shadow-sm border transition-all hover:shadow-md text-sm ${
+                  <div className={`${isMobile ? 'p-3' : 'p-5'} rounded-2xl shadow-sm border transition-all hover:shadow-md ${isMobile ? 'text-sm' : 'text-sm'} ${
                     msg.sender === 'user'
                       ? `${darkMode ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-blue-50 border-blue-200 text-gray-900'}`
                       : `${darkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-gray-200 text-gray-900'}`
@@ -1617,21 +1732,28 @@ export default function App() {
         </div>
 
         {/* Input Area */}
-        <div className={`flex-shrink-0 p-6 border-t ${darkMode ? 'border-slate-800 bg-slate-900/50' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
-          <div className="max-w-4xl mx-auto">
-            <form onSubmit={handleSend} className="flex items-end space-x-4">
+        <div className={`flex-shrink-0 ${isMobile ? 'p-3' : 'p-6'} border-t ${darkMode ? 'border-slate-800 bg-slate-900/50' : 'border-gray-200 bg-white/80'} backdrop-blur-sm`}>
+          <div className={`${isMobile ? 'max-w-full' : 'max-w-4xl'} mx-auto`}>
+            <form onSubmit={handleSend} className={`flex items-end ${isMobile ? 'space-x-2' : 'space-x-4'}`}>
               <div className="flex-1">
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder={apiKeyStatus === 'valid' ? "Ask about gene functions, cultivar performance, or request data analysis..." : "Please enter your OpenAI API key above to start asking questions..."}
+                  placeholder={apiKeyStatus === 'valid' 
+                    ? (isMobile 
+                      ? "Ask about genes, cultivars, or data..." 
+                      : "Ask about gene functions, cultivar performance, or request data analysis...")
+                    : (isMobile 
+                      ? "Enter API key above to start..." 
+                      : "Please enter your OpenAI API key above to start asking questions...")}
                   disabled={isLoading || isStreaming || apiKeyStatus !== 'valid'}
-                  rows={1}
-                  className={`w-full p-4 rounded-xl border resize-none transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  rows={isMobile ? 2 : 1}
+                  className={`w-full ${isMobile ? 'p-3 text-base' : 'p-4'} rounded-xl border resize-none transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     darkMode 
                       ? 'bg-slate-800 border-slate-700 text-slate-100 placeholder-slate-400' 
                       : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
                   } ${isLoading || isStreaming || apiKeyStatus !== 'valid' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  style={{ fontSize: isMobile ? '16px' : 'inherit' }} // Prevent zoom on iOS
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
@@ -1643,14 +1765,16 @@ export default function App() {
               <button
                 type="submit"
                 disabled={isLoading || isStreaming || !input.trim() || apiKeyStatus !== 'valid'}
-                className="p-4 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
+                className={`${isMobile ? 'p-3' : 'p-4'} rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl min-h-[44px] min-w-[44px] flex items-center justify-center`}
               >
-                <FaPaperPlane className="text-lg" />
+                <FaPaperPlane className={isMobile ? 'text-base' : 'text-lg'} />
               </button>
             </form>
+            {!isMobile && (
             <div className="flex items-center justify-center mt-4 text-xs text-gray-500 dark:text-slate-400">
               <span>Press Enter to send • Shift+Enter for new line</span>
             </div>
+            )}
           </div>
         </div>
       </div>
@@ -1658,21 +1782,24 @@ export default function App() {
       {/* Resources Modal */}
       {showResourcesModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
+          <div className={`bg-white dark:bg-slate-800 rounded-xl shadow-2xl ${isMobile ? 'w-full h-full max-w-none' : 'max-w-6xl w-full max-h-[90vh]'} overflow-y-auto`}>
             {/* Modal Header */}
-            <div className="sticky top-0 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 p-6 rounded-t-xl">
+            <div className={`sticky top-0 bg-white dark:bg-slate-800 border-b border-gray-200 dark:border-slate-700 ${isMobile ? 'p-4' : 'p-6'} rounded-t-xl`}>
               <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-                    🧬 Dry Bean Research Resources
+                <div className="flex-1 pr-4">
+                  <h2 className={`${isMobile ? 'text-xl' : 'text-2xl'} font-bold text-gray-900 dark:text-white`}>
+                    🧬 {isMobile ? 'Research Resources' : 'Dry Bean Research Resources'}
                   </h2>
-                  <p className="text-gray-600 dark:text-slate-400 mt-2">
-                    Comprehensive collection of genomics, breeding, and research tools for <em>Phaseolus vulgaris</em>
+                  <p className={`text-gray-600 dark:text-slate-400 mt-2 ${isMobile ? 'text-sm' : ''}`}>
+                    {isMobile 
+                      ? 'Genomics & breeding tools for Phaseolus vulgaris'
+                      : 'Comprehensive collection of genomics, breeding, and research tools for Phaseolus vulgaris'
+                    }
                   </p>
                 </div>
                 <button
                   onClick={() => setShowResourcesModal(false)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors flex-shrink-0"
                 >
                   <FaTimes className="text-gray-500 dark:text-slate-400" />
                 </button>
@@ -1680,14 +1807,14 @@ export default function App() {
             </div>
 
             {/* Modal Content */}
-            <div className="p-6 space-y-8">
+            <div className={`${isMobile ? 'p-4' : 'p-6'} space-y-6`}>
               
               {/* Phaseolus Genomics & Breeding Resources */}
               <div className="space-y-4 p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
                 <h3 className="text-xl font-semibold text-emerald-800 dark:text-emerald-200 flex items-center gap-2">
                   🧬 Phaseolus Genomics & Breeding Resources
                 </h3>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
                   <ResourceCard
                     title="Phytozome (JGI)"
                     description="Genome portal hosting Phaseolus vulgaris reference genomes (e.g., G19833), annotations, and gene families"
@@ -1716,7 +1843,7 @@ export default function App() {
                 <h3 className="text-xl font-semibold text-blue-800 dark:text-blue-200 flex items-center gap-2">
                   🔬 Trait & QTL Databases
                 </h3>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
                   <ResourceCard
                     title="SoyBase/LegumeBase QTL Viewer"
                     description="Although built for soybean, contains transferable tools and synteny-based QTL maps for Phaseolus"
@@ -1735,7 +1862,7 @@ export default function App() {
                 <h3 className="text-xl font-semibold text-purple-800 dark:text-purple-200 flex items-center gap-2">
                   📚 Gene Function & Expression
                 </h3>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
                   <ResourceCard
                     title="Ensembl Plants"
                     description="Search Phaseolus vulgaris gene IDs, protein domains, orthologs, and variants"
@@ -1759,7 +1886,7 @@ export default function App() {
                 <h3 className="text-xl font-semibold text-green-800 dark:text-green-200 flex items-center gap-2">
                   🌱 Breeding & Germplasm Resources
                 </h3>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
                   <ResourceCard
                     title="CIAT Genetic Resources Unit"
                     description="Global Phaseolus germplasm bank and breeding materials"
@@ -1783,7 +1910,7 @@ export default function App() {
                 <h3 className="text-xl font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-2">
                   🧠 Literature & Research Discovery
                 </h3>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
                   <ResourceCard
                     title="PubMed"
                     description="Search dry bean molecular biology and breeding papers"
@@ -1807,7 +1934,7 @@ export default function App() {
                 <h3 className="text-xl font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                   💻 Tools for Computational Researchers
                 </h3>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className={`grid gap-4 ${isMobile ? 'grid-cols-1' : 'md:grid-cols-2'}`}>
                   <ResourceCard
                     title="Galaxy for Plant Science"
                     description="Web-based platform for accessible, reproducible, and collaborative research"
@@ -1850,7 +1977,7 @@ const ResourceCard = ({ title, description, link }) => {
   return (
     <div 
       onClick={handleClick}
-      className="p-4 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all cursor-pointer group"
+      className="p-4 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg hover:border-blue-300 dark:hover:border-blue-500 hover:shadow-md transition-all cursor-pointer group active:scale-95 touch-manipulation"
     >
       <div className="flex items-start justify-between">
         <div className="flex-1">
@@ -1866,4 +1993,5 @@ const ResourceCard = ({ title, description, link }) => {
     </div>
   );
 };
+ 
  

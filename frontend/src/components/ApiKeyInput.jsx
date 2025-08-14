@@ -8,6 +8,7 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [keyStatus, setKeyStatus] = useState('none'); // 'none', 'valid', 'invalid_format', 'invalid_key'
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // Load API key from localStorage on component mount
   useEffect(() => {
@@ -27,6 +28,16 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
       setKeyStatus('none');
     }
   }, [onApiKeyChange]);
+
+  // Handle responsive breakpoints
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Validate OpenAI API key format
   const validateApiKeyFormat = (key) => {
@@ -168,7 +179,7 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
             </button>
           ) : (
             // Expanded - show input
-            <div className="flex items-center space-x-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-600 p-3 shadow-lg">
+            <div className={`flex items-center ${isMobile ? 'space-x-2' : 'space-x-3'} bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-600 ${isMobile ? 'p-2' : 'p-3'} shadow-lg`}>
               <div className="flex items-center space-x-2">
                 <FaKey className="text-blue-500 text-sm" />
                 <div className="relative">
@@ -177,7 +188,7 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
                     value={apiKey}
                     onChange={handleApiKeyChange}
                     placeholder="sk-..."
-                    className={`w-64 px-3 py-1.5 text-sm border rounded-lg bg-transparent font-mono transition-all focus:outline-none focus:ring-2 ${
+                    className={`${isMobile ? 'w-48' : 'w-64'} px-3 py-1.5 text-sm border rounded-lg bg-transparent font-mono transition-all focus:outline-none focus:ring-2 ${
                       apiKey
                         ? isValidFormat
                           ? keyStatus === 'valid'
@@ -186,6 +197,7 @@ const ApiKeyInput = ({ darkMode, onApiKeyChange }) => {
                           : 'border-red-500 focus:ring-red-500/30'
                         : 'border-gray-300 dark:border-slate-500 focus:ring-blue-500/30'
                     }`}
+                    style={{ fontSize: isMobile ? '16px' : 'inherit' }} // Prevent zoom on iOS
                   />
                   <div className="absolute inset-y-0 right-0 flex items-center space-x-1 pr-2">
                     <button
