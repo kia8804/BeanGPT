@@ -766,7 +766,13 @@ export default function App() {
   };
 
   const quickActions = [
-    { icon: FaSearch, label: "Gene Lookup", action: () => setInput("Tell me about resistance genes in dry beans") },
+    { 
+      icon: FaSearch, 
+      label: "Gene Lookup", 
+      action: () => {}, // Temporarily disabled
+      disabled: true,
+      tooltip: "Coming Soon"
+    },
     { icon: FaBook, label: "Resources", action: () => setShowResourcesModal(true) }
   ];
 
@@ -864,11 +870,20 @@ export default function App() {
               {quickActions.map((action, idx) => (
                 <button
                   key={idx}
-                  onClick={action.action}
-                  className="w-full flex items-center space-x-3 p-3 rounded-lg text-left hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors text-sm"
+                  onClick={action.disabled ? undefined : action.action}
+                  disabled={action.disabled}
+                  title={action.tooltip || ''}
+                  className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-colors text-sm ${
+                    action.disabled 
+                      ? 'opacity-50 cursor-not-allowed bg-gray-100 dark:bg-slate-800' 
+                      : 'hover:bg-gray-50 dark:hover:bg-slate-800'
+                  }`}
                 >
-                  <action.icon className="text-blue-500 text-sm" />
-                  <span className="text-gray-700 dark:text-slate-300">{action.label}</span>
+                  <action.icon className={`text-sm ${action.disabled ? 'text-gray-400' : 'text-blue-500'}`} />
+                  <span className={`${action.disabled ? 'text-gray-500 dark:text-slate-500' : 'text-gray-700 dark:text-slate-300'}`}>
+                    {action.label}
+                    {action.disabled && <span className="ml-2 text-xs">(Coming Soon)</span>}
+                  </span>
                 </button>
               ))}
             </div>
@@ -988,10 +1003,7 @@ export default function App() {
               {/* Mobile menu button */}
               {(isMobile || isTablet) && (
                 <button
-                  onClick={() => {
-                    console.log('Mobile menu clicked, current state:', showMobileSidebar);
-                    setShowMobileSidebar(true);
-                  }}
+                  onClick={() => setShowMobileSidebar(true)}
                   className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors mobile-menu-button"
                 >
                   <FaBars className="text-gray-600 dark:text-slate-400" />
@@ -1000,10 +1012,6 @@ export default function App() {
               <div>
                 <h2 className={`${isMobile ? 'text-xl' : 'text-2xl'} font-bold text-gray-900 dark:text-white`}>
                   {isMobile ? 'BeanGPT' : 'Main Platform'}
-                  {/* Debug indicator */}
-                  <span className="text-xs text-red-500 ml-2">
-                    {isMobile ? '📱' : isTablet ? '📟' : '💻'}
-                  </span>
                 </h2>
                 {!isMobile && (
                   <p className="text-gray-600 dark:text-slate-400 text-sm mt-1">
@@ -1825,16 +1833,8 @@ export default function App() {
                     description="Comprehensive portal for Phaseolus, Glycine, and other legumes: gene data, maps, synteny, traits"
                     link="https://legumeinfo.org"
                   />
-                  <ResourceCard
-                    title="Bean Mine (NCGR)"
-                    description="Custom database for dry bean genetics and genomics, part of InterMine"
-                    link="https://mines.legumeinfo.org/beanmine"
-                  />
-                  <ResourceCard
-                    title="PhaseolusGenes"
-                    description="Specialized database for gene expression, co-expression networks, and gene functional annotations in P. vulgaris"
-                    link="https://phaseolusgenes.scinet.usda.gov"
-                  />
+
+
                 </div>
               </div>
 
@@ -1849,11 +1849,7 @@ export default function App() {
                     description="Although built for soybean, contains transferable tools and synteny-based QTL maps for Phaseolus"
                     link="https://www.soybase.org/"
                   />
-                  <ResourceCard
-                    title="QTLBase (multi-species)"
-                    description="Repository of QTLs and associated traits across crops; can filter by species"
-                    link="https://ngdc.cncb.ac.cn/qtlbase"
-                  />
+
                 </div>
               </div>
 
