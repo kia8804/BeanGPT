@@ -13,7 +13,8 @@ export default defineConfig({
       },
     },
   },
-  base: process.env.NODE_ENV === 'production' ? '/BeanGPT/' : '/',
+  // Use root path for custom domain, subpath for GitHub Pages default domain
+  base: process.env.VITE_CUSTOM_DOMAIN === 'true' ? '/' : '/BeanGPT/',
   build: {
     outDir: 'dist',
     sourcemap: false,
