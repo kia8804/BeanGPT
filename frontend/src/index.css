@@ -204,50 +204,57 @@ textarea:focus-visible {
   
   /* Ensure containers don't exceed viewport */
   .container, .max-w-7xl, .max-w-6xl, .max-w-5xl, .max-w-4xl {
-    @apply max-w-full px-4;
+    max-width: 100% !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
   }
   
   /* Fix chat input on mobile */
   .research-input {
-    @apply text-base; /* Prevents zoom on iOS */
+    font-size: 1rem !important; /* Prevents zoom on iOS */
   }
   
   /* Responsive text sizes */
-  .text-6xl { @apply text-4xl; }
-  .text-5xl { @apply text-3xl; }
-  .text-4xl { @apply text-2xl; }
-  .text-3xl { @apply text-xl; }
+  .text-6xl { font-size: 2.25rem !important; }
+  .text-5xl { font-size: 1.875rem !important; }
+  .text-4xl { font-size: 1.5rem !important; }
+  .text-3xl { font-size: 1.25rem !important; }
   
   /* Fix button sizes on mobile */
   .research-button {
-    @apply min-h-[44px] min-w-[44px]; /* iOS touch target size */
+    min-height: 44px !important; /* iOS touch target size */
+    min-width: 44px !important;
   }
   
   /* Responsive padding */
-  .p-8 { @apply p-4; }
-  .p-6 { @apply p-4; }
-  .px-8 { @apply px-4; }
-  .py-8 { @apply py-4; }
+  .p-8 { padding: 1rem !important; }
+  .p-6 { padding: 1rem !important; }
+  .px-8 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .py-8 { padding-top: 1rem !important; padding-bottom: 1rem !important; }
   
   /* Fix tables on mobile */
   .markdown-content table {
-    @apply text-sm;
+    font-size: 0.875rem !important;
   }
   
   .markdown-content th,
   .markdown-content td {
-    @apply px-2 py-1;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
   }
 }
 
 /* Tablet responsiveness */
 @media (min-width: 769px) and (max-width: 1024px) {
   .container {
-    @apply px-6;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
   }
   
-  .text-6xl { @apply text-5xl; }
-  .text-5xl { @apply text-4xl; }
+  .text-6xl { font-size: 3rem !important; }
+  .text-5xl { font-size: 2.25rem !important; }
 }
 
 /* Prevent zoom on form inputs (iOS Safari) */
@@ -261,54 +268,66 @@ select {
 
 /* Fix for very small screens */
 @media (max-width: 320px) {
-  .text-base { @apply text-sm; }
-  .text-lg { @apply text-base; }
-  .text-xl { @apply text-lg; }
+  .text-base { font-size: 0.875rem !important; }
+  .text-lg { font-size: 1rem !important; }
+  .text-xl { font-size: 1.125rem !important; }
 }
 
 /* Large laptop screens (1440px+) */
 @media (min-width: 1440px) {
   .container {
-    @apply max-w-7xl mx-auto;
+    max-width: 80rem !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
   }
 }
 
 /* Standard laptop screens (1024px - 1439px) */
 @media (min-width: 1024px) and (max-width: 1439px) {
   .container {
-    @apply max-w-5xl mx-auto px-6;
+    max-width: 64rem !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
   }
   
   /* Adjust text sizes for medium laptops */
-  .text-6xl { @apply text-5xl; }
-  .text-5xl { @apply text-4xl; }
+  .text-6xl { font-size: 3rem !important; }
+  .text-5xl { font-size: 2.25rem !important; }
 }
 
 /* Small laptops and large tablets (768px - 1023px) */
 @media (min-width: 768px) and (max-width: 1023px) {
   .container {
-    @apply max-w-4xl mx-auto px-4;
+    max-width: 56rem !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
   }
   
-  .text-6xl { @apply text-4xl; }
-  .text-5xl { @apply text-3xl; }
-  .text-4xl { @apply text-2xl; }
+  .text-6xl { font-size: 2.25rem !important; }
+  .text-5xl { font-size: 1.875rem !important; }
+  .text-4xl { font-size: 1.5rem !important; }
   
   /* Adjust padding for medium screens */
-  .p-8 { @apply p-6; }
-  .px-8 { @apply px-6; }
-  .py-8 { @apply py-6; }
+  .p-8 { padding: 1.5rem !important; }
+  .px-8 { padding-left: 1.5rem !important; padding-right: 1.5rem !important; }
+  .py-8 { padding-top: 1.5rem !important; padding-bottom: 1.5rem !important; }
 }
 
 /* Ultra-wide screens (1920px+) */
 @media (min-width: 1920px) {
   .container {
-    @apply max-w-screen-xl mx-auto;
+    max-width: 1280px !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
   }
   
   /* Prevent content from being too spread out */
-  .max-w-4xl { @apply max-w-5xl; }
-  .max-w-3xl { @apply max-w-4xl; }
+  .max-w-4xl { max-width: 64rem !important; }
+  .max-w-3xl { max-width: 56rem !important; }
 }
 
 /* High DPI / Retina displays */
@@ -323,26 +342,26 @@ select {
 /* Landscape orientation fixes */
 @media (orientation: landscape) and (max-height: 600px) {
   /* Reduce vertical padding on short landscape screens */
-  .py-8 { @apply py-4; }
-  .py-6 { @apply py-3; }
-  .py-4 { @apply py-2; }
+  .py-8 { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+  .py-6 { padding-top: 0.75rem !important; padding-bottom: 0.75rem !important; }
+  .py-4 { padding-top: 0.5rem !important; padding-bottom: 0.5rem !important; }
   
   /* Smaller text on short screens */
-  .text-6xl { @apply text-4xl; }
-  .text-5xl { @apply text-3xl; }
-  .text-4xl { @apply text-2xl; }
+  .text-6xl { font-size: 2.25rem !important; }
+  .text-5xl { font-size: 1.875rem !important; }
+  .text-4xl { font-size: 1.5rem !important; }
 }
 
 /* Zoom level adjustments */
 @media (min-width: 1200px) {
   /* Ensure content doesn't get too wide on zoomed out screens */
   .prose {
-    @apply max-w-4xl;
+    max-width: 56rem !important;
   }
   
   /* Better spacing for larger screens */
   .space-y-6 > * + * {
-    @apply mt-8;
+    margin-top: 2rem !important;
   }
 }
 
@@ -369,18 +388,30 @@ select {
 
 /* Better button scaling across screen sizes */
 .btn-responsive {
-  @apply px-4 py-2 text-sm;
+  padding-left: 1rem !important;
+  padding-right: 1rem !important;
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+  font-size: 0.875rem !important;
 }
 
 @media (min-width: 768px) {
   .btn-responsive {
-    @apply px-6 py-3 text-base;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+    font-size: 1rem !important;
   }
 }
 
 @media (min-width: 1024px) {
   .btn-responsive {
-    @apply px-8 py-3 text-base;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+    font-size: 1rem !important;
   }
 }
 
