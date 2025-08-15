@@ -77,10 +77,18 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
 
     system_msg = (
         "CRITICAL INSTRUCTION: Output ONLY executable Python code. No explanations, no text, no markdown formatting, no comments about what you're doing.\n\n"
-        "🚨 CROSS-MARKET COMPARISON ALERT: If the user asks to compare a specific cultivar (e.g., OAC 23-1) with a market class (e.g., Kidney beans), you MUST show BOTH on the same chart:\n"
-        "1. The specific cultivar data (RED color)\n"
-        "2. The market class average data (BLUE color)\n"
-        "3. Use the FULL dataset `df` - do NOT create sample data\n\n"
+        "🚨 MARKET CLASS VISUALIZATION RULES:\n"
+        "When user mentions market classes or comparisons involving market classes:\n"
+        "1. ALWAYS show average yield across ALL LOCATIONS for each market class\n"
+        "2. Group data by market class (e.g., Dark Red Kidney, Light Red Kidney, White Kidney, etc.)\n"
+        "3. Calculate the mean yield for each market class across all locations and years\n"
+        "4. Create a comprehensive bar chart showing ALL market classes with their average yields\n"
+        "5. If a specific cultivar is mentioned (e.g., Dynasty), highlight it prominently:\n"
+        "   - Show Dynasty as a separate bar in RED\n"
+        "   - Show its market class average in a different color\n"
+        "   - Include other market classes for context\n"
+        "6. Use professional titles like: 'Average Yield by Market Class (All Locations)'\n"
+        "7. Sort bars by yield (highest to lowest) for better readability\n\n"
         
         "You are an INTELLIGENT chart generator that creates MEANINGFUL visualizations. Generate ONLY raw Python code that:\n"
         "- Uses the existing DataFrame `df` (NEVER create sample data, NEVER overwrite df, NEVER create new DataFrames with sample data)\n"
@@ -102,10 +110,14 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
         "- For single cultivar questions: show it alongside 5-10 similar cultivars\n"
         "- Make charts tell a STORY, not just show isolated data points\n"
         "- Add context like 'vs. average', 'vs. top performers', 'over time'\n"
-        "- 🚨 CROSS-MARKET COMPARISONS: When comparing cultivar vs market class (e.g., 'OAC 23-1 vs Kidney beans'), MUST show BOTH:\n"
-        "  * The specific cultivar (e.g., OAC 23-1) in RED\n"
-        "  * The market class average (e.g., Kidney beans) in BLUE\n"
-        "  * Include both in title and legend with market class labels\n\n" 
+        "- 🚨 MARKET CLASS ANALYSIS: When user mentions market classes or bean types:\n"
+        "  * Show comprehensive view of ALL market classes with their average yields across all locations\n"
+        "  * Group by market class (Dark Red Kidney, Light Red Kidney, White Kidney, etc.)\n"
+        "  * Calculate mean yield for each market class across all locations and years\n"
+        "  * If specific cultivar mentioned (e.g., Dynasty), highlight it as separate RED bar alongside its market class\n"
+        "  * Sort by yield (highest to lowest) for professional presentation\n"
+        "  * Title: 'Average Yield by Market Class (All Locations)' or similar\n"
+        "  * This provides comprehensive market intelligence, not just simple comparisons\n\n" 
         "- Uses plotly.graph_objects as go and plotly.express as px\n"
         "- Never calls fig.show()\n"
         "- Includes professional styling with update_layout()\n"
@@ -602,7 +614,13 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
         "enumerate": enumerate,
         "zip": zip,
     }
-    local_ns: Dict = {}
+    # Create local namespace with common variables that might be used in generated code
+    local_ns: Dict = {
+        'target_cultivar': None,
+        'market_class_filter': None,
+        'colors': None,
+        'fig': None
+    }
 
     code = strip_md_fences(code)
     code = re.sub(r"\bfig\.show\(\s*\)", "", code)  # remove any fig.show()
