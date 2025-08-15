@@ -139,14 +139,32 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     function_call_cultivar = args.get('cultivar')
     if function_call_cultivar and function_call_cultivar not in df['Cultivar Name'].values:
         print(f"🚨 WARNING: Function call suggested cultivar '{function_call_cultivar}' does not exist in dataset!")
-        # Check if it's similar to any real cultivar
+        # Check if it's similar to any real cultivar (handle OAC 23-1D -> OAC 23-1 case)
         all_cultivars = df['Cultivar Name'].dropna().astype(str)
-        similar_cultivars = all_cultivars[all_cultivars.str.contains(function_call_cultivar, case=False, na=False)]
-        if not similar_cultivars.empty:
-            print(f"🔍 Similar cultivars found: {list(similar_cultivars.unique())}")
+        
+        # First try exact partial match (e.g., "OAC 23-1D" should find "OAC 23-1")
+        partial_match = None
+        for cultivar in all_cultivars.unique():
+            cultivar_str = str(cultivar)
+            # Check if the function call cultivar is a superset of an actual cultivar
+            if cultivar_str in function_call_cultivar or function_call_cultivar.replace('-D', '') == cultivar_str:
+                partial_match = cultivar_str
+                break
+        
+        if partial_match:
+            print(f"🔧 Fixed cultivar parameter: '{function_call_cultivar}' -> '{partial_match}'")
+            args['cultivar'] = partial_match
         else:
-            print(f"❌ No similar cultivars found. Removing invalid cultivar parameter.")
-            args.pop('cultivar', None)  # Remove the invalid parameter
+            # Try fuzzy matching
+            similar_cultivars = all_cultivars[all_cultivars.str.contains(function_call_cultivar.split()[0] if ' ' in function_call_cultivar else function_call_cultivar[:5], case=False, na=False)]
+            if not similar_cultivars.empty:
+                print(f"🔍 Similar cultivars found: {list(similar_cultivars.unique())}")
+                # Use the first similar cultivar
+                args['cultivar'] = similar_cultivars.iloc[0]
+                print(f"🔧 Fixed cultivar parameter: '{function_call_cultivar}' -> '{args['cultivar']}'")
+            else:
+                print(f"❌ No similar cultivars found. Removing invalid cultivar parameter.")
+                args.pop('cultivar', None)  # Remove the invalid parameter
     
     # Track if we removed an invalid cultivar for user notification
     invalid_cultivar_mentioned = function_call_cultivar and function_call_cultivar not in df['Cultivar Name'].values
@@ -157,6 +175,34 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         # Update the cultivar parameter with the first detected cultivar
         args['cultivar'] = str(mentioned_cultivars[0])
         print(f"🔧 Fixed cultivar parameter: '{args.get('cultivar', 'None')}' -> '{mentioned_cultivars[0]}'")
+    
+    # Check for cross-market class comparison issues
+    cross_market_issue = None
+    if args.get('cultivar') and args.get('market_class'):
+        cultivar_name = args.get('cultivar')
+        requested_market_class = args.get('market_class').lower()
+        
+        # Get the actual market class of the requested cultivar
+        cultivar_data = df[df['Cultivar Name'] == cultivar_name]
+        if not cultivar_data.empty:
+            actual_market_class = cultivar_data['Market Class'].iloc[0]
+            actual_market_class_lower = str(actual_market_class).lower()
+            
+            # Check if there's a mismatch
+            if requested_market_class in ['kidney'] and 'kidney' not in actual_market_class_lower:
+                cross_market_issue = {
+                    'cultivar': cultivar_name,
+                    'actual_market_class': actual_market_class,
+                    'requested_market_class': args.get('market_class')
+                }
+                print(f"🚨 CROSS-MARKET COMPARISON DETECTED: {cultivar_name} is {actual_market_class}, not {args.get('market_class')}")
+            elif requested_market_class in ['navy', 'white navy'] and 'navy' not in actual_market_class_lower:
+                cross_market_issue = {
+                    'cultivar': cultivar_name,
+                    'actual_market_class': actual_market_class,
+                    'requested_market_class': args.get('market_class')
+                }
+                print(f"🚨 CROSS-MARKET COMPARISON DETECTED: {cultivar_name} is {actual_market_class}, not {args.get('market_class')}")
     
     # General dynamic disambiguation system
     def detect_and_resolve_ambiguity(question, args, df):
@@ -480,6 +526,8 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         # Generate chart and description - pass cultivar context with environmental info
         if invalid_cultivar_mentioned:
             cultivar_context = f"IMPORTANT: The cultivar '{invalid_cultivar_name}' mentioned in the request does not exist in the dataset. Do not highlight or reference it in the chart. Show only valid cultivars from the dataset."
+        elif cross_market_issue:
+            cultivar_context = f"CROSS-MARKET COMPARISON: {cross_market_issue['cultivar']} is a {cross_market_issue['actual_market_class']} bean, while user requested {cross_market_issue['requested_market_class']} beans. Create a chart showing {cross_market_issue['cultivar']} performance compared to {cross_market_issue['requested_market_class']} beans. Use DIFFERENT COLORS for different market classes - highlight {cross_market_issue['cultivar']} ({cross_market_issue['actual_market_class']}) in RED and {cross_market_issue['requested_market_class']} beans in BLUE. Include both market classes in the title and legend for clarity."
         elif mentioned_cultivars:
             cultivar_context = f"Focus on these cultivars: {', '.join([str(c) for c in mentioned_cultivars])}"
         else:
@@ -501,6 +549,11 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         # CRITICAL: Notify user if invalid cultivar was mentioned
         if invalid_cultivar_mentioned:
             response += f"⚠️ **Note:** The cultivar '{invalid_cultivar_name}' was not found in the Ontario bean trial dataset. The analysis below shows navy bean performance patterns without highlighting this specific cultivar.\n\n"
+        
+        # CRITICAL: Notify user about cross-market class comparison issues
+        if cross_market_issue:
+            response += f"📊 **Cross-Market Class Comparison:** {cross_market_issue['cultivar']} is a **{cross_market_issue['actual_market_class']}** bean, while you requested comparison with {cross_market_issue['requested_market_class']} beans. "
+            response += f"The chart below shows both market classes with different colors for clear distinction.\n\n"
         
         # Add cultivar context if any were mentioned
         if mentioned_cultivars:
@@ -714,6 +767,11 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         # CRITICAL: Notify user if invalid cultivar was mentioned
         if invalid_cultivar_mentioned:
             response += f"⚠️ **Note:** The cultivar '{invalid_cultivar_name}' was not found in the Ontario bean trial dataset. The analysis below shows general bean performance data.\n\n"
+        
+        # CRITICAL: Notify user about cross-market class comparison issues
+        if cross_market_issue:
+            response += f"📊 **Cross-Market Class Comparison:** {cross_market_issue['cultivar']} is a **{cross_market_issue['actual_market_class']}** bean, while you requested comparison with {cross_market_issue['requested_market_class']} beans. "
+            response += f"The analysis below shows both market classes for educational comparison.\n\n"
         
         # Add cultivar context if any were mentioned
         if mentioned_cultivars:

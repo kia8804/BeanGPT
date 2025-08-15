@@ -283,7 +283,7 @@ def query_openai(context: str, source_list: List[str], question: str, conversati
         "Your goal is to provide expert-level, evidence-backed, and mechanistically detailed responses for researchers, breeders, "
         "pathologists, and institutional stakeholders.\n\n"
         
-        "**Platform Attribution:** This system was developed by Kiarash Mirkamandari, an AI researcher at the Dry Bean Breeding & Computational Biology Program.\n\n"
+        "**Platform Attribution:** This system was developed by the Dry Bean Breeding & Computational Biology Program at the University of Guelph in 2025.\n\n"
         
         "Your specialization spans:\n"
         "• Quantitative genetics and marker-assisted breeding\n"
@@ -420,7 +420,7 @@ def query_openai_stream(context: str, source_list: List[str], question: str, con
         "Your goal is to provide expert-level, evidence-backed, and mechanistically detailed responses for researchers, breeders, "
         "pathologists, and institutional stakeholders.\n\n"
         
-        "**Platform Attribution:** This system was developed by Kiarash Mirkamandari, an AI researcher at the Dry Bean Breeding & Computational Biology Program.\n\n"
+        "**Platform Attribution:** This system was developed by the Dry Bean Breeding & Computational Biology Program at the University of Guelph in 2025.\n\n"
         
         "Your specialization spans:\n"
         "• Quantitative genetics and marker-assisted breeding\n"
@@ -822,7 +822,9 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "• 🚨 CRITICAL: ONLY use ACTUAL cultivar names that exist in the dataset (e.g., OAC Rex, AC Pintoba, Black Hawk)\n"
                                         "• 🚨 CRITICAL: If you don't know specific cultivar names from the data, say \"the top-performing cultivars\" instead\n"
                                         "• NEVER say \"sample data\" — this is the complete dataset\n"
-                                        "• NEVER generate vague placeholder values like [specific yield]\n\n"
+                                        "• NEVER generate vague placeholder values like [specific yield]\n"
+                                        "• 🚨 PROVIDE CONCRETE AVERAGES: When comparing market classes, calculate and state the actual average values (e.g., 'Kidney beans: 3,200 kg/ha average yield, 95 days average maturity'). Never say 'would need to be extracted' - extract and calculate them immediately\n"
+                                        "• 🚨 KIDNEY BEAN IDENTIFICATION: Kidney beans include ANY Market Class containing 'kidney' (case-insensitive): kidney, Kidney, white kidney, dark red kidney, light red kidney, dark red kidney bean, light red kidney bean. The dataset DOES contain kidney bean data - analyze it properly!\n\n"
                                         
                                         "📊 DATA CONTEXT\n"
                                         "You have access to TWO comprehensive datasets:\n"
@@ -861,7 +863,8 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "• You may incorporate environmental context (temperature, precipitation) for location/year combinations\n"
                                         "• You may identify cultivars with specific disease resistance combinations for breeding recommendations\n"
                                         "• Only mention data that is NOT in the dataset if the user specifically asks for it\n"
-                                        "• Use explicit values and clearly state which cultivars are statistically similar or superior\n\n"
+                                        "• Use explicit values and clearly state which cultivars are statistically similar or superior\n"
+                                        "• 🚨 CROSS-MARKET COMPARISONS: When comparing different market classes (e.g., OAC 23-1 White Navy vs Kidney beans), provide data for BOTH groups and explain the comparison context\n\n"
                                         
                                         "📌 OUTPUT RULES\n"
                                         "• Use **bold** for cultivar names and numeric values\n"
@@ -887,7 +890,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                 },
                                 {
                                     "role": "user",
-                                    "content": f"Based on the question '{question}', analyze this data:\n\n**MAIN DATASET:**\n{preview}\n\n**HISTORICAL DATA AVAILABLE:**\nHistorical data is also available for additional context and pedigree information. Include relevant historical insights when applicable.\n\n🚨 REMINDER: Use ONLY the actual cultivar names shown in the data above. DO NOT invent names like 'Cultivar A, B, C' - use the real names from the dataset!"
+                                    "content": f"Based on the question '{question}', analyze this data:\n\n**MAIN DATASET:**\n{preview}\n\n**HISTORICAL DATA AVAILABLE:**\nHistorical data is also available for additional context and pedigree information. Include relevant historical insights when applicable.\n\n🚨 KIDNEY BEAN DATA CONFIRMATION: The dataset DOES contain kidney bean data for 2024 (48 records across 16 cultivars). Market classes include: Dark Red Kidney, Light Red Kidney, White Kidney, kidney, white kidney. DO NOT say there is no kidney bean data available.\n\n🚨 MARKET CLASS AVERAGES: When comparing market classes, ALWAYS calculate and provide the average yield, maturity, and other metrics directly from the dataset. DO NOT say you need to extract data or that specific data would need to be extracted - calculate the averages immediately and present them. For example: 'Kidney beans average yield: 3,200 kg/ha, average maturity: 95 days'.\n\n🚨 REMINDER: Use ONLY the actual cultivar names shown in the data above. DO NOT invent names like 'Cultivar A, B, C' - use the real names from the dataset!"
                                 }
                             ],
                             temperature=0.3,
@@ -1038,7 +1041,8 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                     "content": ("You are a helpful dry bean research assistant. Provide a brief, friendly response to casual questions. "
                                "For research questions, mention that you can help with bean breeding data and genetics literature.\n\n"
                                "**Important:** If asked about who developed or created this system, say it was developed by "
-                               "Kiarash Mirkamandari, an AI researcher at the Dry Bean Breeding & Computational Biology Program.")
+                               "the Dry Bean Breeding & Computational Biology Program at the University of Guelph in 2025. "
+                               "If asked when you were made or created, say 2025. Do not mention OpenAI or any other AI companies.")
                 }
             ]
             

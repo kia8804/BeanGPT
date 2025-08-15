@@ -26,12 +26,12 @@ async def chat_endpoint(request: ChatRequest):
         # Require user-provided API key - no fallback to environment
         api_key = request.api_key
         if not api_key:
-            yield f"data: {json.dumps({'type': 'error', 'data': 'Please enter your OpenAI API key in the interface above to continue.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'data': 'Please enter your API key in the interface above to continue.'})}\n\n"
             return
         
         # Validate API key format
         if not api_key.startswith('sk-') or len(api_key) < 20:
-            yield f"data: {json.dumps({'type': 'error', 'data': 'Invalid API key format. Please enter a valid OpenAI API key.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'data': 'Invalid API key format. Please enter a valid API key.'})}\n\n"
             return
         
         # Stream the answer
@@ -64,12 +64,12 @@ async def continue_research_endpoint(request: ChatRequest):
         # Require user-provided API key - no fallback to environment
         api_key = request.api_key
         if not api_key:
-            yield f"data: {json.dumps({'type': 'error', 'data': 'Please enter your OpenAI API key in the interface above to continue.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'data': 'Please enter your API key in the interface above to continue.'})}\n\n"
             return
         
         # Validate API key format
         if not api_key.startswith('sk-') or len(api_key) < 20:
-            yield f"data: {json.dumps({'type': 'error', 'data': 'Invalid API key format. Please enter a valid OpenAI API key.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'data': 'Invalid API key format. Please enter a valid API key.'})}\n\n"
             return
         
         # Stream the research continuation

@@ -1753,7 +1753,7 @@ export default function App() {
                       : "Ask about gene functions, cultivar performance, or request data analysis...")
                     : (isMobile 
                       ? "Enter API key above to start..." 
-                      : "Please enter your OpenAI API key above to start asking questions...")}
+                      : "Please enter your API key above to start asking questions...")}
                   disabled={isLoading || isStreaming || apiKeyStatus !== 'valid'}
                   rows={isMobile ? 2 : 1}
                   className={`w-full ${isMobile ? 'p-3 text-base' : 'p-4'} rounded-xl border resize-none transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 ${

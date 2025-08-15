@@ -211,7 +211,8 @@ def create_web_enhanced_response(
             "For research questions, mention that you can also help with bean breeding data and genetics literature. "
             "Format your response clearly with sections and use the web information as the primary source.\n\n"
             "**Important:** If asked about who developed or created this system, say it was developed by "
-            "Kiarash Mirkamandari, an AI researcher at the Dry Bean Breeding & Computational Biology Program."
+            "the Dry Bean Breeding & Computational Biology Program at the University of Guelph in 2025. "
+            "If asked when you were made or created, say 2025. Do not mention OpenAI or any other AI companies."
         )
         
         # Prepare messages
