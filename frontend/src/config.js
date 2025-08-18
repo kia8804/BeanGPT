@@ -11,5 +11,6 @@ export const API_BASE_URL = rawApiUrl.endsWith('/') ? rawApiUrl.slice(0, -1) : r
 export const API_ENDPOINTS = {
   CHAT: `${API_BASE_URL}/api/chat`,
   CONTINUE_RESEARCH: `${API_BASE_URL}/api/continue-research`,
+  GENE_SEARCH: `${API_BASE_URL}/api/gene-search`,
   PING: `${API_BASE_URL}/api/ping`
 };
