@@ -12,6 +12,7 @@ import remarkGfm from 'remark-gfm';
 import PlotlyChart from './components/PlotlyChart.jsx';
 import ApiKeyInput from './components/ApiKeyInput.jsx';
 import { API_ENDPOINTS } from './config.js';
+import GeneSearch from './components/GeneSearch.jsx';
 
 const initialMessages = [
   {
@@ -58,6 +59,7 @@ Type your question or upload your data below, let BeanGPT do the heavy lifting!
 ];
 
 export default function App() {
+  // Main app state - v2
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -72,13 +74,35 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(window.innerWidth < 1024);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   
+  // Session and UI state
   const [currentSession, setCurrentSession] = useState('Research Session 1');
   const chatEndRef = useRef(null);
   const [showSuggestedQuestions, setShowSuggestedQuestions] = useState({});
   const [showGenePanel, setShowGenePanel] = useState({});
+  
+  // Modal states
+  const [showGeneSearchModal, setShowGeneSearchModal] = useState(false);
   const [showResourcesModal, setShowResourcesModal] = useState(false);
+  
+  // API key state
   const [userApiKey, setUserApiKey] = useState('');
   const [apiKeyStatus, setApiKeyStatus] = useState('none'); // 'none', 'valid', 'invalid'
+
+  // Handle ESC key for modals
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        if (showGeneSearchModal) {
+          setShowGeneSearchModal(false);
+        } else if (showResourcesModal) {
+          setShowResourcesModal(false);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showGeneSearchModal, showResourcesModal]);
 
   // Handle API key changes from the ApiKeyInput component
   const handleApiKeyChange = (apiKey) => {
@@ -769,9 +793,8 @@ export default function App() {
     { 
       icon: FaSearch, 
       label: "Gene Lookup", 
-      action: () => {}, // Temporarily disabled
-      disabled: true,
-      tooltip: "Coming Soon"
+      action: () => setShowGeneSearchModal(true),
+      disabled: false
     },
     { icon: FaBook, label: "Resources", action: () => setShowResourcesModal(true) }
   ];
@@ -803,8 +826,8 @@ export default function App() {
         ${isMobile || isTablet 
           ? `fixed top-0 left-0 h-full z-50 transform transition-transform duration-300 ${
               showMobileSidebar ? 'translate-x-0' : '-translate-x-full'
-            } w-80 mobile-sidebar`
-          : `${sidebarCollapsed ? 'w-16' : 'w-80'} transition-all duration-300`
+            } w-96 mobile-sidebar`
+          : `${sidebarCollapsed ? 'w-16' : 'w-96'} transition-all duration-300`
         } 
         ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-gray-200'} 
         ${isMobile || isTablet ? 'border-r shadow-2xl' : 'border-r'} 
@@ -831,24 +854,25 @@ export default function App() {
               {(isMobile || isTablet) && showMobileSidebar && (
                 <button
                   onClick={() => setShowMobileSidebar(false)}
-                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors lg:hidden"
+                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
                 >
-                  <FaTimes className="text-gray-500" />
+                  <FaTimes className="text-gray-600 dark:text-slate-400" />
                 </button>
-              )}
-              {/* Desktop collapse button */}
-              {!isMobile && !isTablet && (
-            <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              <FaCaretRight className={`text-gray-500 transition-transform ${sidebarCollapsed ? '' : 'rotate-180'}`} />
-            </button>
               )}
             </div>
           </div>
         </div>
 
+
+        {/* Desktop collapse button */}
+        {!isMobile && !isTablet && (
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors absolute top-4 right-4"
+          >
+            <FaCaretRight className={`text-gray-500 transition-transform ${sidebarCollapsed ? '' : 'rotate-180'}`} />
+          </button>
+        )}
         {/* Session Info */}
         {(!sidebarCollapsed || (isMobile || isTablet)) && (
           <div className="p-4 border-b border-gray-200 dark:border-slate-800">
@@ -1956,6 +1980,34 @@ export default function App() {
               <div className="text-center text-sm text-gray-600 dark:text-slate-400">
                 <p>Need more resources? Contact our research team or suggest additions to improve this collection.</p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Gene Search Modal */}
+      {showGeneSearchModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className={`${darkMode ? 'bg-slate-900' : 'bg-white'} rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden`}>
+            {/* Modal Header */}
+            <div className={`px-6 py-4 border-b ${darkMode ? 'border-slate-700' : 'border-gray-200'} flex items-center justify-between`}>
+              <div className="flex items-center space-x-3">
+                <FaSearch className="text-blue-500 text-xl" />
+                <h2 className={`text-xl font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  Gene Search & Analysis
+                </h2>
+              </div>
+              <button
+                onClick={() => setShowGeneSearchModal(false)}
+                className={`p-2 rounded-lg hover:${darkMode ? 'bg-slate-800' : 'bg-gray-100'} transition-colors`}
+              >
+                <FaTimes className={`${darkMode ? 'text-slate-400' : 'text-gray-600'}`} />
+              </button>
+            </div>
+            
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+              <GeneSearch apiKey={userApiKey} />
             </div>
           </div>
         </div>

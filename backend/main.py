@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
-from routes import chat, ping
+from routes import chat, ping, gene_search
 import os
 
 # Check if running on Lightsail and use appropriate config
@@ -45,6 +45,7 @@ app.add_middleware(
 # Include routers
 app.include_router(chat.router, prefix=settings.api_prefix, tags=["chat"])
 app.include_router(ping.router, prefix=settings.api_prefix, tags=["health"])
+app.include_router(gene_search.router, prefix=settings.api_prefix, tags=["gene_search"])
 
 # Add health checks
 from routes import health
