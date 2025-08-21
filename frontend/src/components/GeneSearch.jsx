@@ -1,3 +1,4 @@
+import { API_ENDPOINTS } from "../config";
 import { useState, useEffect, useRef } from 'react';
 import { FaSearch, FaSpinner } from 'react-icons/fa';
 
@@ -37,7 +38,7 @@ function GeneSearch({ apiKey }) {
         }
       }, 800);
       
-      const response = await fetch('/api/gene-search', {
+      const response = await fetch(API_ENDPOINTS.GENE_SEARCH, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
