@@ -68,12 +68,12 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
     categorical_cols = [col for col in cols if col not in num_cols]
     date_cols = [col for col in cols if df[col].dtype == 'datetime64[ns]' or 'date' in col.lower() or 'year' in col.lower()]
     
-    # Get unique values for categorical columns (limited to first 10 for brevity)
+    # Get unique values for categorical columns  
     categorical_info = {}
-    for col in categorical_cols[:5]:  # Limit to first 5 categorical columns
+    for col in categorical_cols[:5]:  # Limit to first 5 categorical columns for prompting context only
         unique_vals = df[col].unique()
-        if len(unique_vals) <= 20:  # Only show if reasonable number of unique values
-            categorical_info[col] = list(unique_vals)[:10]
+        if len(unique_vals) <= 50:  # Show more values for better context
+            categorical_info[col] = list(unique_vals)  # Show all unique values
 
     system_msg = (
         "CRITICAL INSTRUCTION: Output ONLY executable Python code. No explanations, no text, no markdown formatting, no comments about what you're doing.\n\n"
@@ -337,7 +337,7 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
         "    group_col = df.columns[0]  # Use first column for grouping\n"
         "    value_col = df.select_dtypes(include=['number']).columns[0] if df.select_dtypes(include=['number']).columns.any() else df.columns[1]\n"
         "    \n"
-        "    table_data = df.groupby(group_col)[value_col].mean().reset_index() if df[group_col].nunique() < 50 else df.head(20)\n"
+        "    table_data = df.groupby(group_col)[value_col].mean().reset_index()\n"
         "    \n"
         "    fig = go.Figure(data=[go.Table(\n"
         "        header=dict(values=list(table_data.columns), \n"
@@ -569,11 +569,13 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
         {"role": "user", "content": f"Sample categorical values: {categorical_info}"},
         {"role": "user", "content": f"Sample data (first 3 rows): {rows[:3]}"},
         {"role": "user", "content": "CRITICAL MARKET CLASS FILTERING: Use the 'Market Class' column for proper bean type filtering. Kidney beans = anything with 'kidney' in Market Class (case-insensitive: 'kidney', 'Kidney', 'white kidney', 'dark red kidney', 'light red kidney', 'dark red kidney bean', 'light red kidney bean'). Navy beans = 'White Navy' in Market Class. IMPORTANT: When user asks for kidney beans, filter by Market Class containing 'kidney', not by bean_type column. CROSS-MARKET COMPARISONS: When comparing different market classes, you MUST show BOTH the specific cultivar (RED) AND the market class data (BLUE) on the same chart. Do NOT show only one or the other."},
+        {"role": "user", "content": "🎯 PERFORMANCE PLOT RULE: When user asks about 'performance' or 'comparing performance' of cultivars, create a SCATTER PLOT with: X-axis = Days to Maturity (Maturity column), Y-axis = Yield (kg/ha). Each cultivar should be ONE POINT (average across all locations). Label each point with cultivar name. Add regression line if multiple cultivars. DO NOT create line charts by location for performance comparisons. REQUIRED CODE PATTERN: ```python\n# Filter data\nfiltered_data = df[(df['Year'] == 2024) & (df['Market Class'].str.contains('cranberry', case=False, na=False))]\n# Group by cultivar and calculate averages\ncultivars_avg = filtered_data.groupby('Cultivar Name')[['Yield', 'Maturity']].mean().reset_index()\n# Create scatter plot\nfig.add_trace(go.Scatter(x=cultivars_avg['Maturity'], y=cultivars_avg['Yield'], mode='markers+text', text=cultivars_avg['Cultivar Name'], textposition='top center'))\n```"},
         {"role": "user", "content": "ENHANCED DATA CONTEXT: This dataset includes enriched breeding information - Market Class, Pedigree, Released Year, Disease Resistance markers (Common Mosaic Virus R1/R15, Anthracnose R17/R23/R73, Common Blight). IMPORTANT: Historical weather data is available in a separate dataset that can be accessed via db_manager.historical_data - it contains 15+ weather variables by location and year that can be linked to bean performance. CRITICAL LOCATION AGGREGATION: When showing performance by location, always group by location and calculate averages - don't show multiple data points per location unless explicitly requested."},
         {"role": "user", "content": f"User request: {prompt}"},
         {"role": "user", "content": "CRITICAL: Extract any cultivar names mentioned in the user request and use them in your analysis"},
         {"role": "user", "content": "🚨 CROSS-MARKET COMPARISON REQUIREMENT: If user asks to compare 'OAC 23-1' with 'Kidney beans', you MUST show BOTH on the same chart: OAC 23-1 data (RED) AND Kidney beans data (BLUE). Do NOT show only kidney beans - that's incomplete!"},
         {"role": "user", "content": "🚨 ABSOLUTE RULE: If your chart would only show 1 data point (1 bar, 1 value, etc.), set fig = None instead. Single-value charts are USELESS and FORBIDDEN."},
+        {"role": "user", "content": "🔢 COMPLETE DATA RULE: ALWAYS show ALL available data in charts and text responses. NEVER limit, sample, or truncate data. For market class queries (cranberry beans, kidney beans, etc.), show EVERY cultivar in that market class. For 'list all' queries, show the complete list. NO exceptions - use the full dataset without any .head(), .sample(), or limiting operations."},
         {"role": "user", "content": "RESPOND WITH ONLY PYTHON CODE - NO EXPLANATORY TEXT"},
     ]
 

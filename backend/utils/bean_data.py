@@ -36,6 +36,16 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         print(f"⚠️ Historical data not available: {e}")
         historical_data_available = False
 
+    # Get climate data for future projections (loaded lazily)
+    climate_data_available = True
+    try:
+        climate_data = db_manager.climate_data
+        if climate_data.empty:
+            climate_data_available = False
+    except Exception as e:
+        print(f"⚠️ Climate data not available: {e}")
+        climate_data_available = False
+
     # Extract API key for chart generation
     api_key = args.get('api_key')
     if not api_key:
@@ -50,6 +60,126 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
 
     # Get the original question for analysis
     original_question = args.get("original_question", "")
+    
+    # EARLY CHECK: Handle climate prediction queries BEFORE bean data validation
+    # This prevents climate queries from being caught by bean data validation
+    future_keywords = ['2030', '2031', '2032', '2033', '2034', '2035', '2036', '2037', '2038', '2039', 
+                      '2040', '2041', '2042', '2043', '2044', '2045', '2046', '2047', '2048', '2049',
+                      '2050', '2051', '2052', '2053', '2054', '2055', '2056', '2057', '2058', '2059',
+                      '2060', '2061', '2062', '2063', '2064', '2065', '2066', '2067', '2068', '2069',
+                      '2070', '2071', '2072', '2073', '2074', '2075', '2076', '2077', '2078', '2079',
+                      '2080', '2081', '2082', '2083', '2084', '2085', '2086', '2087', '2088', '2089',
+                      '2090', '2091', '2092', '2093', '2094', '2095', '2096', '2097', '2098', '2099',
+                      'future', 'predict', 'prediction', 'projection', 'will be', 'climate change', 'scenario']
+    is_early_climate_query = any(keyword in original_question.lower() for keyword in future_keywords)
+    
+    if is_early_climate_query and climate_data_available:
+        print(f"🌡️ Early climate detection triggered for: {original_question}")
+        
+        # Extract decade and scenario information from the question
+        import re
+        climate_decade = None
+        climate_scenario = 'RCP 4.5'  # Default to normal scenario
+        
+        # Extract decade from question
+        decade_match = re.search(r'(20[3-9][0-9])', original_question)
+        if decade_match:
+            year = int(decade_match.group(1))
+            # Round to nearest decade
+            climate_decade = (year // 10) * 10
+        
+        # Extract scenario from question
+        if 'best' in original_question.lower() or '2.5' in original_question:
+            climate_scenario = 'RCP 2.5'
+        elif 'worst' in original_question.lower() or 'worse' in original_question.lower() or '8.5' in original_question:
+            climate_scenario = 'RCP 8.5'
+        elif 'normal' in original_question.lower() or '4.5' in original_question:
+            climate_scenario = 'RCP 4.5'
+        
+        # Extract location from question or args
+        location_input = args.get('location') or 'Elora'  # Default to Elora if not specified
+        
+        # Convert location codes to full names
+        location_code_mapping = {
+            'ELOR': 'Elora', 'WOOD': 'Woodstock', 'STHM': 'St. Thomas', 'THOR': 'Thorndale',
+            'AUBN': 'Auburn', 'WINC': 'Winchester', 'KEMPT': 'Kempton', 'FERG': 'Fergus'
+        }
+        
+        if location_input in location_code_mapping:
+            location_input = location_code_mapping[location_input]
+        
+        # Handle location extraction from question text if not in args
+        if 'elora' in original_question.lower():
+            location_input = 'Elora'
+        elif 'woodstock' in original_question.lower():
+            location_input = 'Woodstock'
+        elif 'st. thomas' in original_question.lower() or 'st thomas' in original_question.lower():
+            location_input = 'St. Thomas'
+        elif 'thorndale' in original_question.lower():
+            location_input = 'Thorndale'
+        elif 'fergus' in original_question.lower():
+            location_input = 'Fergus'
+        
+        # Get climate data
+        if climate_decade:
+            climate_info = db_manager.get_climate_data_for_location_decade(location_input, climate_decade, climate_scenario)
+            
+            if not climate_info.empty:
+                climate_row = climate_info.iloc[0]
+                
+                response = f"## 🌡️ **Climate Projection for {location_input} in {climate_decade}s**\n\n"
+                response += f"**📊 Climate Scenario**: {climate_row['Scenario_Description']}\n\n"
+                
+                response += f"**🌡️ Temperature Projections:**\n"
+                response += f"- **Minimum Temperature**: {climate_row['Tmin']:.1f}°C\n"
+                response += f"- **Maximum Temperature**: {climate_row['Tmax']:.1f}°C\n"
+                response += f"- **Temperature Range**: {climate_row['Tmax'] - climate_row['Tmin']:.1f}°C\n\n"
+                
+                response += f"**🌧️ Precipitation Projection:**\n"
+                response += f"- **Annual Precipitation**: {climate_row['Precipitation']:.1f} mm\n\n"
+                
+                # Add comparison with current conditions (2020s)
+                current_climate = db_manager.get_climate_data_for_location_decade(location_input, 2020, climate_scenario)
+                if not current_climate.empty:
+                    current_row = current_climate.iloc[0]
+                    
+                    temp_change = climate_row['Tmax'] - current_row['Tmax']
+                    precip_change = climate_row['Precipitation'] - current_row['Precipitation']
+                    
+                    response += f"**📈 Change from 2020s:**\n"
+                    response += f"- **Temperature Change**: {temp_change:+.1f}°C {'🔥' if temp_change > 0 else '❄️' if temp_change < 0 else '🟡'}\n"
+                    response += f"- **Precipitation Change**: {precip_change:+.1f} mm {'🌧️' if precip_change > 0 else '☀️' if precip_change < 0 else '🟡'}\n\n"
+                
+                # Add scenario comparison
+                response += f"**🎯 Climate Scenario Information:**\n"
+                response += f"- **RCP 2.5 (Best Case)**: Strong mitigation, global warming limited to ~1.5°C\n"
+                response += f"- **RCP 4.5 (Normal Case)**: Moderate mitigation, global warming ~2-3°C\n"
+                response += f"- **RCP 8.5 (Worst Case)**: High emissions, global warming >4°C\n\n"
+                
+                response += f"*Climate projections are based on Representative Concentration Pathways (RCP) scenarios from IPCC climate models.*\n"
+                
+                return response, response, {}
+            else:
+                return f"**⚠️ No climate data available for {location_input} in {climate_decade}s under {climate_scenario} scenario**", "", {}
+        else:
+            # General climate query without specific decade
+            response = f"## 🌡️ **Climate Information for {location_input}**\n\n"
+            
+            all_scenarios = ['RCP 2.5', 'RCP 4.5', 'RCP 8.5']
+            scenario_names = ['Best Case', 'Normal Case', 'Worst Case']
+            
+            response += f"**🎯 Available Climate Scenarios:**\n"
+            for scenario, name in zip(all_scenarios, scenario_names):
+                future_data = db_manager.get_climate_data_for_location_decade(location_input, 2050, scenario)
+                if not future_data.empty:
+                    temp_2050 = future_data.iloc[0]['Tmax']
+                    precip_2050 = future_data.iloc[0]['Precipitation']
+                    response += f"- **{scenario} ({name})**: {temp_2050:.1f}°C max temp, {precip_2050:.0f}mm precipitation by 2050s\n"
+            
+            response += f"\n**📅 Available Decades**: 2030s, 2040s, 2050s, 2060s, 2070s, 2080s, 2090s\n"
+            response += f"**💡 Try asking**: 'How will the climate be in {location_input} in 2045?' or 'Compare {location_input} climate in 2030 vs 2060'\n"
+            
+            return response, response, {}
     
     # Check if question mentions regions/locations not in the Ontario dataset
     # Get all unique locations in the dataset for comparison
@@ -291,6 +421,38 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     weather_keywords = ['temperature', 'weather', 'precipitation', 'humidity', 'climate', 'rainfall', 'conditions']
     is_weather_query = any(keyword in original_question.lower() for keyword in weather_keywords)
     
+    # Check if this is a climate prediction/future query
+    future_keywords = ['2030', '2031', '2032', '2033', '2034', '2035', '2036', '2037', '2038', '2039', 
+                      '2040', '2041', '2042', '2043', '2044', '2045', '2046', '2047', '2048', '2049',
+                      '2050', '2051', '2052', '2053', '2054', '2055', '2056', '2057', '2058', '2059',
+                      '2060', '2061', '2062', '2063', '2064', '2065', '2066', '2067', '2068', '2069',
+                      '2070', '2071', '2072', '2073', '2074', '2075', '2076', '2077', '2078', '2079',
+                      '2080', '2081', '2082', '2083', '2084', '2085', '2086', '2087', '2088', '2089',
+                      '2090', '2091', '2092', '2093', '2094', '2095', '2096', '2097', '2098', '2099',
+                      'future', 'predict', 'prediction', 'projection', 'will be', 'climate change', 'scenario']
+    is_climate_prediction_query = any(keyword in original_question.lower() for keyword in future_keywords)
+    
+    # Extract decade and scenario information from the question
+    climate_decade = None
+    climate_scenario = 'RCP 4.5'  # Default to normal scenario
+    
+    if is_climate_prediction_query:
+        import re
+        # Extract decade from question
+        decade_match = re.search(r'(20[3-9][0-9])', original_question)
+        if decade_match:
+            year = int(decade_match.group(1))
+            # Round to nearest decade
+            climate_decade = (year // 10) * 10
+        
+        # Extract scenario from question
+        if 'best' in original_question.lower() or '2.5' in original_question:
+            climate_scenario = 'RCP 2.5'
+        elif 'worst' in original_question.lower() or 'worse' in original_question.lower() or '8.5' in original_question:
+            climate_scenario = 'RCP 8.5'
+        elif 'normal' in original_question.lower() or '4.5' in original_question:
+            climate_scenario = 'RCP 4.5'
+    
     # Check if this is a cross-analysis query (cultivars + locations + environmental factors)
     cross_analysis_keywords = ['highest temperature', 'warmest location', 'hottest location', 'highest average temperature', 
                               'location with highest', 'cultivar had the location', 'location with the most']
@@ -385,6 +547,126 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                 
         except Exception as e:
             print(f"⚠️ Error processing cross-analysis query: {e}")
+            # Fall through to normal processing
+    
+    # Handle climate prediction queries (future climate scenarios)
+    if is_climate_prediction_query and climate_data_available:
+        try:
+            print(f"🌡️ Processing climate prediction query for decade: {climate_decade}, scenario: {climate_scenario}")
+            
+            # Extract location from question or args
+            location_input = args.get('location') or 'Elora'  # Default to Elora if not specified
+            
+            # Handle location extraction from question text if not in args
+            if 'elora' in original_question.lower():
+                location_input = 'Elora'
+            elif 'woodstock' in original_question.lower():
+                location_input = 'Woodstock'
+            elif 'st. thomas' in original_question.lower() or 'st thomas' in original_question.lower():
+                location_input = 'St. Thomas'
+            
+            # Get climate data
+            if climate_decade:
+                climate_info = db_manager.get_climate_data_for_location_decade(location_input, climate_decade, climate_scenario)
+                
+                if not climate_info.empty:
+                    climate_row = climate_info.iloc[0]
+                    
+                    response = f"## 🌡️ **Climate Projection for {location_input} in {climate_decade}s**\n\n"
+                    response += f"**📊 Climate Scenario**: {climate_row['Scenario_Description']}\n\n"
+                    
+                    response += f"**🌡️ Temperature Projections:**\n"
+                    response += f"- **Minimum Temperature**: {climate_row['Tmin']:.1f}°C\n"
+                    response += f"- **Maximum Temperature**: {climate_row['Tmax']:.1f}°C\n"
+                    response += f"- **Temperature Range**: {climate_row['Tmax'] - climate_row['Tmin']:.1f}°C\n\n"
+                    
+                    response += f"**🌧️ Precipitation Projection:**\n"
+                    response += f"- **Annual Precipitation**: {climate_row['Precipitation']:.1f} mm\n\n"
+                    
+                    # Add comparison with current conditions (2020s)
+                    current_climate = db_manager.get_climate_data_for_location_decade(location_input, 2020, climate_scenario)
+                    if not current_climate.empty:
+                        current_row = current_climate.iloc[0]
+                        
+                        temp_change = climate_row['Tmax'] - current_row['Tmax']
+                        precip_change = climate_row['Precipitation'] - current_row['Precipitation']
+                        
+                        response += f"**📈 Change from 2020s:**\n"
+                        response += f"- **Temperature Change**: {temp_change:+.1f}°C {'🔥' if temp_change > 0 else '❄️' if temp_change < 0 else '🟡'}\n"
+                        response += f"- **Precipitation Change**: {precip_change:+.1f} mm {'🌧️' if precip_change > 0 else '☀️' if precip_change < 0 else '🟡'}\n\n"
+                    
+                    # Add cultivar performance implications
+                    cultivar_input = args.get('cultivar')
+                    if cultivar_input and cultivar_input in df['Cultivar Name'].values:
+                        cultivar_data = df[df['Cultivar Name'] == cultivar_input]
+                        location_cultivar_data = cultivar_data[cultivar_data['Location'] == location_input]
+                        
+                        if not location_cultivar_data.empty:
+                            avg_yield = location_cultivar_data['Yield'].mean()
+                            avg_maturity = location_cultivar_data['Maturity'].mean()
+                            
+                            response += f"**🌱 {cultivar_input} Performance Context:**\n"
+                            response += f"- **Historical Average Yield**: {avg_yield:.1f} kg/ha\n"
+                            if not pd.isna(avg_maturity):
+                                response += f"- **Average Maturity**: {avg_maturity:.0f} days\n"
+                            
+                            # Climate impact assessment
+                            if temp_change > 2:
+                                response += f"- **⚠️ Impact Assessment**: Higher temperatures may affect maturity timing and require heat-tolerant varieties\n"
+                            elif temp_change > 0:
+                                response += f"- **✅ Impact Assessment**: Moderate temperature increase may extend growing season\n"
+                            
+                            if precip_change < -50:
+                                response += f"- **⚠️ Drought Risk**: Reduced precipitation may require irrigation or drought-resistant varieties\n"
+                            elif precip_change > 100:
+                                response += f"- **⚠️ Excess Water Risk**: Increased precipitation may require improved drainage\n"
+                        
+                        response += f"\n"
+                    
+                    # Add scenario comparison
+                    response += f"**🎯 Climate Scenario Information:**\n"
+                    response += f"- **RCP 2.5 (Best Case)**: Strong mitigation, global warming limited to ~1.5°C\n"
+                    response += f"- **RCP 4.5 (Normal Case)**: Moderate mitigation, global warming ~2-3°C\n"
+                    response += f"- **RCP 8.5 (Worst Case)**: High emissions, global warming >4°C\n\n"
+                    
+                    response += f"*Climate projections are based on Representative Concentration Pathways (RCP) scenarios from IPCC climate models.*\n"
+                    
+                    # Add web search context if available
+                    if web_context and web_sources:
+                        response += f"\n---\n\n## 🌐 **Global Context & Current Information**\n\n"
+                        web_response = web_context
+                        for i, source in enumerate(web_sources, 1):
+                            web_citation = f"[Web-{i}]"
+                            clickable_citation = f"[Web-{i}]({source})"
+                            web_response = web_response.replace(web_citation, clickable_citation)
+                        response += web_response
+                        response += f"\n\n*🔗 Web sources are linked above for verification*\n"
+                    
+                    return response, response, {}
+                else:
+                    return f"**⚠️ No climate data available for {location_input} in {climate_decade}s under {climate_scenario} scenario**", "", {}
+            else:
+                # General climate query without specific decade
+                response = f"## 🌡️ **Climate Information for {location_input}**\n\n"
+                
+                all_scenarios = ['RCP 2.5', 'RCP 4.5', 'RCP 8.5']
+                scenario_names = ['Best Case', 'Normal Case', 'Worst Case']
+                
+                response += f"**🎯 Available Climate Scenarios:**\n"
+                for scenario, name in zip(all_scenarios, scenario_names):
+                    future_data = db_manager.get_climate_data_for_location_decade(location_input, 2050, scenario)
+                    if not future_data.empty:
+                        temp_2050 = future_data.iloc[0]['Tmax']
+                        precip_2050 = future_data.iloc[0]['Precipitation']
+                        response += f"- **{scenario} ({name})**: {temp_2050:.1f}°C max temp, {precip_2050:.0f}mm precipitation by 2050s\n"
+                
+                response += f"\n**📅 Available Decades**: 2030s, 2040s, 2050s, 2060s, 2070s, 2080s, 2090s\n"
+                response += f"**💡 Try asking**: 'How will the climate be in {location_input} in 2045?' or 'Compare {location_input} climate in 2030 vs 2060'\n"
+                
+                return response, response, {}
+                
+        except Exception as e:
+            print(f"⚠️ Error processing climate prediction query: {e}")
             # Fall through to normal processing
     
     # Handle pure weather queries for trial locations (including multi-location comparisons)
@@ -543,26 +825,149 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
             print("📊 Chart generation failed - showing text analysis only")
             chart_data = {}
         
-        # Create a data-rich response with actual insights
-        response = f"## 📊 **Bean Data Analysis**\n\n"
-        
-        # CRITICAL: Notify user if invalid cultivar was mentioned
-        if invalid_cultivar_mentioned:
-            response += f"⚠️ **Note:** The cultivar '{invalid_cultivar_name}' was not found in the Ontario bean trial dataset. The analysis below shows navy bean performance patterns without highlighting this specific cultivar.\n\n"
-        
-        # CRITICAL: Notify user about cross-market class comparison issues
-        if cross_market_issue:
-            response += f"📊 **Cross-Market Class Comparison:** {cross_market_issue['cultivar']} is a **{cross_market_issue['actual_market_class']}** bean, while you requested comparison with {cross_market_issue['requested_market_class']} beans. "
-            response += f"The chart below shows both market classes with different colors for clear distinction.\n\n"
-        
-        # Add cultivar context if any were mentioned
-        if mentioned_cultivars:
-            response += f"**🌱 Cultivars analyzed:** {', '.join([str(c) for c in mentioned_cultivars])}\n\n"
+            # SPECIAL HANDLING: List all cultivars for market class queries OR latest releases
+    list_keywords = ['list all', 'show all', 'all the', 'what are all', 'list every', 'all available']
+    latest_keywords = ['latest', 'newest', 'most recent', 'recently released', 'new releases']
+    is_list_all_query = any(keyword in original_question.lower() for keyword in list_keywords)
+    is_latest_query = any(keyword in original_question.lower() for keyword in latest_keywords)
+    
+    # Check if this is a market class listing query
+    market_class_filter = args.get('market_class')
+    if is_list_all_query and market_class_filter:
+        # Filter by market class and get unique cultivars
+        market_class_data = df[df['Market Class'].str.contains(market_class_filter, case=False, na=False)]
+        if not market_class_data.empty:
+            unique_cultivars = sorted(market_class_data['Cultivar Name'].unique())
             
-            # Add specific data insights for mentioned cultivars with enriched information
-            for cultivar in mentioned_cultivars:
-                cultivar_data = df[df['Cultivar Name'] == cultivar]
-                if not cultivar_data.empty:
+            response = f"## 📊 **All {market_class_filter} Bean Cultivars in Ontario**\n\n"
+            response += f"Based on the Ontario bean trial dataset, here are **all {len(unique_cultivars)} {market_class_filter.lower()} bean cultivars** tested:\n\n"
+            
+            # Add each cultivar with key details
+            for i, cultivar in enumerate(unique_cultivars, 1):
+                cultivar_data = market_class_data[market_class_data['Cultivar Name'] == cultivar]
+                avg_yield = cultivar_data['Yield'].mean() if 'Yield' in cultivar_data.columns else None
+                avg_maturity = cultivar_data['Maturity'].mean() if 'Maturity' in cultivar_data.columns else None
+                trial_count = len(cultivar_data)
+                
+                response += f"**{i}. {cultivar}**\n"
+                if avg_yield:
+                    response += f"   - Average yield: {avg_yield:.1f} kg/ha\n"
+                if avg_maturity:
+                    response += f"   - Average maturity: {avg_maturity:.1f} days\n"
+                response += f"   - Trial records: {trial_count}\n\n"
+            
+            # Add summary statistics
+            if avg_yield:
+                total_avg_yield = market_class_data['Yield'].mean()
+                response += f"**📈 {market_class_filter} Class Summary:**\n"
+                response += f"- Total cultivars: {len(unique_cultivars)}\n"
+                response += f"- Average yield across all cultivars: {total_avg_yield:.1f} kg/ha\n"
+                if avg_maturity:
+                    total_avg_maturity = market_class_data['Maturity'].mean()
+                    response += f"- Average maturity: {total_avg_maturity:.1f} days\n"
+                response += f"- Total trial records: {len(market_class_data)}\n\n"
+            
+            return response, response, {}
+    
+    # SPECIAL HANDLING: Latest releases for market class queries
+    if is_latest_query and market_class_filter:
+        # Filter by market class
+        market_class_data = df[df['Market Class'].str.contains(market_class_filter, case=False, na=False)]
+        if not market_class_data.empty:
+            # Find the most recent year with data for this market class
+            if 'Released Year' in market_class_data.columns:
+                # Use Released Year if available
+                market_class_data_clean = market_class_data.dropna(subset=['Released Year'])
+                if not market_class_data_clean.empty:
+                    latest_year = int(market_class_data_clean['Released Year'].max())
+                    latest_cultivars_data = market_class_data_clean[market_class_data_clean['Released Year'] == latest_year]
+                    unique_latest_cultivars = sorted(latest_cultivars_data['Cultivar Name'].unique())
+                    
+                    response = f"## 📊 **Latest {market_class_filter} Bean Cultivars Released in Ontario**\n\n"
+                    response += f"The most recent {market_class_filter.lower()} bean cultivars released in Ontario (as of {latest_year}) are:\n\n"
+                    
+                    # List all cultivars from the latest year
+                    for i, cultivar in enumerate(unique_latest_cultivars, 1):
+                        cultivar_data = latest_cultivars_data[latest_cultivars_data['Cultivar Name'] == cultivar]
+                        avg_yield = cultivar_data['Yield'].mean() if 'Yield' in cultivar_data.columns else None
+                        avg_maturity = cultivar_data['Maturity'].mean() if 'Maturity' in cultivar_data.columns else None
+                        trial_count = len(cultivar_data)
+                        
+                        response += f"**{i}. {cultivar}** (Released: {latest_year})\n"
+                        if avg_yield:
+                            response += f"   - Average yield: {avg_yield:.1f} kg/ha\n"
+                        if avg_maturity:
+                            response += f"   - Average maturity: {avg_maturity:.1f} days\n"
+                        response += f"   - Trial records: {trial_count}\n\n"
+                    
+                    # Add summary
+                    response += f"**📈 Latest {market_class_filter} Releases Summary:**\n"
+                    response += f"- Number of cultivars released in {latest_year}: {len(unique_latest_cultivars)}\n"
+                    if avg_yield:
+                        total_avg_yield = latest_cultivars_data['Yield'].mean()
+                        response += f"- Average yield of latest releases: {total_avg_yield:.1f} kg/ha\n"
+                    if avg_maturity:
+                        total_avg_maturity = latest_cultivars_data['Maturity'].mean()
+                        response += f"- Average maturity: {total_avg_maturity:.1f} days\n"
+                    response += f"- Total trial records: {len(latest_cultivars_data)}\n\n"
+                    
+                    return response, response, {}
+            
+            # Fallback: Use Year column if Released Year not available
+            if 'Year' in market_class_data.columns:
+                latest_trial_year = int(market_class_data['Year'].max())
+                latest_year_data = market_class_data[market_class_data['Year'] == latest_trial_year]
+                unique_latest_cultivars = sorted(latest_year_data['Cultivar Name'].unique())
+                
+                response = f"## 📊 **Latest {market_class_filter} Bean Cultivars in Ontario Trials**\n\n"
+                response += f"Based on the most recent trial data ({latest_trial_year}), here are **all {len(unique_latest_cultivars)} {market_class_filter.lower()} bean cultivars** tested:\n\n"
+                
+                # List all cultivars from the latest trial year
+                for i, cultivar in enumerate(unique_latest_cultivars, 1):
+                    cultivar_data = latest_year_data[latest_year_data['Cultivar Name'] == cultivar]
+                    avg_yield = cultivar_data['Yield'].mean() if 'Yield' in cultivar_data.columns else None
+                    avg_maturity = cultivar_data['Maturity'].mean() if 'Maturity' in cultivar_data.columns else None
+                    trial_count = len(cultivar_data)
+                    
+                    response += f"**{i}. {cultivar}**\n"
+                    if avg_yield:
+                        response += f"   - Average yield: {avg_yield:.1f} kg/ha\n"
+                    if avg_maturity:
+                        response += f"   - Average maturity: {avg_maturity:.1f} days\n"
+                    response += f"   - Trial records: {trial_count}\n\n"
+                
+                response += f"**📈 {latest_trial_year} {market_class_filter} Trial Summary:**\n"
+                response += f"- Total cultivars tested: {len(unique_latest_cultivars)}\n"
+                if avg_yield:
+                    total_avg_yield = latest_year_data['Yield'].mean()
+                    response += f"- Average yield: {total_avg_yield:.1f} kg/ha\n"
+                if avg_maturity:
+                    total_avg_maturity = latest_year_data['Maturity'].mean()
+                    response += f"- Average maturity: {total_avg_maturity:.1f} days\n"
+                response += f"- Total trial records: {len(latest_year_data)}\n\n"
+                
+                return response, response, {}
+    
+    # Create a data-rich response with actual insights
+    response = f"## 📊 **Bean Data Analysis**\n\n"
+    
+    # CRITICAL: Notify user if invalid cultivar was mentioned
+    if invalid_cultivar_mentioned:
+        response += f"⚠️ **Note:** The cultivar '{invalid_cultivar_name}' was not found in the Ontario bean trial dataset. The analysis below shows navy bean performance patterns without highlighting this specific cultivar.\n\n"
+    
+    # CRITICAL: Notify user about cross-market class comparison issues
+    if cross_market_issue:
+        response += f"📊 **Cross-Market Class Comparison:** {cross_market_issue['cultivar']} is a **{cross_market_issue['actual_market_class']}** bean, while you requested comparison with {cross_market_issue['requested_market_class']} beans. "
+        response += f"The chart below shows both market classes with different colors for clear distinction.\n\n"
+    
+    # Add cultivar context if any were mentioned
+    if mentioned_cultivars:
+        response += f"**🌱 Cultivars analyzed:** {', '.join([str(c) for c in mentioned_cultivars])}\n\n"
+        
+        # Add specific data insights for mentioned cultivars with enriched information
+        for cultivar in mentioned_cultivars:
+            cultivar_data = df[df['Cultivar Name'] == cultivar]
+            if not cultivar_data.empty:
                     response += f"**{cultivar} Performance:**\n"
                     response += f"- **Records:** {len(cultivar_data)} trials\n"
                     
@@ -631,7 +1036,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         if not mentioned_cultivars and any(keyword in original_question.lower() for keyword in performance_keywords):
             if 'Cultivar Name' in df.columns and 'Yield' in df.columns:
                 # Get top 5 performing cultivars by average yield
-                top_performers = df.groupby('Cultivar Name')['Yield'].mean().sort_values(ascending=False).head(5)
+                top_performers = df.groupby('Cultivar Name')['Yield'].mean().sort_values(ascending=False)
                 response += f"\n**🏆 Top Performing Cultivars:**\n"
                 for cultivar, avg_yield in top_performers.items():
                     cultivar_data = df[df['Cultivar Name'] == cultivar]
@@ -803,7 +1208,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         if not mentioned_cultivars and any(keyword in original_question.lower() for keyword in performance_keywords):
             if 'Cultivar Name' in df.columns and 'Yield' in df.columns:
                 # Get top 5 performing cultivars by average yield
-                top_performers = df.groupby('Cultivar Name')['Yield'].mean().sort_values(ascending=False).head(5)
+                top_performers = df.groupby('Cultivar Name')['Yield'].mean().sort_values(ascending=False)
                 response += f"\n**🏆 Top Performing Cultivars:**\n"
                 for cultivar, avg_yield in top_performers.items():
                     cultivar_data = df[df['Cultivar Name'] == cultivar]
@@ -832,7 +1237,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
 # Enhanced function schema for OpenAI function calling with new data capabilities
 function_schema = {
     "name": "query_bean_data",
-    "description": "Query the enhanced Ontario bean trial dataset AND historical weather data for comprehensive analysis including performance metrics, breeding characteristics, disease resistance, environmental context, and visualizations. ALSO use this for weather/climate queries about trial locations (Auburn, Blyth, Elora, etc.) as it has access to 15+ weather variables including temperature, precipitation, and humidity. For questions about bean production/performance in regions OUTSIDE Ontario (e.g., USA, Europe, Brazil, China), this function will automatically supplement Ontario data with current global web search information. Use this when users ask about bean varieties, breeding information, disease resistance, environmental factors, weather data, global bean production, or want comparisons and charts.",
+    "description": "Query the enhanced Ontario bean trial dataset, historical weather data, AND future climate projections for comprehensive analysis including performance metrics, breeding characteristics, disease resistance, environmental context, climate predictions, and visualizations. ALSO use this for weather/climate queries about trial locations (Auburn, Blyth, Elora, etc.) as it has access to 15+ weather variables including temperature, precipitation, and humidity. NOW INCLUDES future climate data with RCP scenarios (2.5, 4.5, 8.5) for decades 2030s-2090s to predict how climate change will affect bean production. HANDLES 'list all' queries to show complete cultivar lists for market classes (e.g., 'list all cranberry beans', 'show all kidney beans') AND 'latest' queries to show ALL cultivars from the most recent release year (e.g., 'latest kidney beans', 'newest releases'). For questions about bean production/performance in regions OUTSIDE Ontario (e.g., USA, Europe, Brazil, China), this function will automatically supplement Ontario data with current global web search information. Use this when users ask about bean varieties, breeding information, disease resistance, environmental factors, weather data, climate predictions, future scenarios, global bean production, or want comparisons and charts.",
     "parameters": {
         "type": "object",
         "properties": {

@@ -257,11 +257,13 @@ def is_genetics_question(question: str, api_key: str) -> bool:
                     "role": "system",
                     "content": (
                         "You are a classifier that determines if a question is about genetics, molecular biology, "
-                        "gene function, protein analysis, genomics, beans, breeding, or plant biology. Respond with only 'true' or 'false'.\n\n"
-                        "Questions about yield data, cultivar performance, trial results, location comparisons, "
-                        "or statistical analysis of agricultural data should be classified as 'false'.\n\n"
-                        "Questions about genes, proteins, molecular mechanisms, genetic markers, "
-                        "biological processes, beans, breeding, or plant biology should be classified as 'true'."
+                        "gene function, protein analysis, genomics, or plant biology research. Respond with only 'true' or 'false'.\n\n"
+                        "CLASSIFY AS FALSE (not genetics): Questions about cultivar lists, market classes, yield data, "
+                        "performance comparisons, trial results, location data, statistical analysis, 'list all X beans', "
+                        "'cranberry beans in Ontario', 'kidney bean performance', breeding program results, "
+                        "or agricultural data queries should be classified as 'false'.\n\n"
+                        "CLASSIFY AS TRUE (genetics): Only questions specifically about genes, proteins, molecular mechanisms, "
+                        "genetic markers, biological processes, gene expression, DNA, RNA, or molecular research should be classified as 'true'."
                     ),
                 },
                 {"role": "user", "content": question},
@@ -735,7 +737,9 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
         yield {"type": "progress", "data": {"step": "dataset", "detail": "Checking cultivar database"}}
         
         # Check for bean data keywords - broader detection for data analysis
-        bean_keywords = ["yield", "maturity", "cultivar", "variety", "performance", "bean", "production", "steam", "lighthouse", "seal"]
+        bean_keywords = ["yield", "maturity", "cultivar", "variety", "performance", "bean", "production", "steam", "lighthouse", "seal", 
+                        "cranberry", "kidney", "navy", "black", "pinto", "market class", "list all", "beans in ontario", 
+                        "oac", "ac ", "breeding", "trial", "data", "dataset"]
         
         # Add location-based keywords for environmental/weather queries at trial locations
         location_keywords = ["auburn", "blyth", "elora", "granton", "kippen", "monkton", "thorndale", "winchester", "woodstock", 
@@ -744,16 +748,27 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
         # Add weather/environmental keywords that should trigger bean data when combined with locations
         weather_keywords = ["temperature", "weather", "precipitation", "humidity", "climate", "environmental", "rainfall", "conditions"]
         
+        # Add climate/future prediction keywords
+        future_climate_keywords = ["2030", "2031", "2032", "2033", "2034", "2035", "2036", "2037", "2038", "2039", 
+                                  "2040", "2041", "2042", "2043", "2044", "2045", "2046", "2047", "2048", "2049",
+                                  "2050", "2051", "2052", "2053", "2054", "2055", "2056", "2057", "2058", "2059",
+                                  "2060", "2061", "2062", "2063", "2064", "2065", "2066", "2067", "2068", "2069",
+                                  "2070", "2071", "2072", "2073", "2074", "2075", "2076", "2077", "2078", "2079",
+                                  "2080", "2081", "2082", "2083", "2084", "2085", "2086", "2087", "2088", "2089",
+                                  "2090", "2091", "2092", "2093", "2094", "2095", "2096", "2097", "2098", "2099",
+                                  "future", "predict", "prediction", "projection", "will be", "climate change", "scenario", "rcp"]
+        
         chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate", "table", "display"]
         
         # Trigger bean data analysis for relevant questions
         has_bean_keywords = any(keyword in question.lower() for keyword in bean_keywords)
         has_location_keywords = any(keyword in question.lower() for keyword in location_keywords)
         has_weather_keywords = any(keyword in question.lower() for keyword in weather_keywords)
+        has_future_climate_keywords = any(keyword in question.lower() for keyword in future_climate_keywords)
         explicitly_wants_chart = any(keyword in question.lower() for keyword in chart_keywords)
         
-        # Trigger bean data if: regular bean keywords OR (location + weather keywords)
-        should_query_bean_data = has_bean_keywords or (has_location_keywords and has_weather_keywords)
+        # Trigger bean data if: regular bean keywords OR (location + weather keywords) OR future climate keywords
+        should_query_bean_data = has_bean_keywords or (has_location_keywords and has_weather_keywords) or has_future_climate_keywords
         
         if should_query_bean_data:
             # Let GPT decide whether to call the bean function
@@ -761,7 +776,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                 {
                     "role": "system",
                     "content": (
-                        "You are a dry bean research platform with access to Ontario bean trial data AND historical weather data. "
+                        "You are a dry bean research platform with access to Ontario bean trial data, historical weather data, AND future climate projections. "
                         "ALWAYS call the query_bean_data function when the user asks for:\n"
                         "- Bean performance data (yield, maturity, etc.)\n"
                         "- Charts, plots, graphs, or visualizations of bean data\n"
@@ -770,10 +785,13 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                         "- Questions about trial results or research station data\n"
                         "- Weather/environmental questions about trial locations (Auburn, Blyth, Elora, etc.)\n"
                         "- Temperature, precipitation, humidity data for research stations\n"
+                        "- Future climate predictions (2030s, 2040s, 2050s, etc.) and climate scenarios (RCP 2.5, 4.5, 8.5)\n"
+                        "- Climate change impacts on bean production\n"
+                        "- How cultivars will perform under future climate conditions\n"
                         "- Location comparisons (e.g., 'Compare Elora and Woodstock')\n"
-                        "- Any question that mentions bean characteristics, locations, or years\n\n"
+                        "- Any question that mentions bean characteristics, locations, years, or future scenarios\n\n"
                         "IMPORTANT FOR LOCATION COMPARISONS: When the user asks to compare multiple locations (e.g., 'Compare Elora and Woodstock'), extract ALL location names and pass them as comma-separated codes in the location parameter (e.g., 'ELOR, WOOD').\n\n"
-                        "The user's question mentions bean-related terms or trial locations, so you should call the function."
+                        "The user's question mentions bean-related terms, trial locations, or climate predictions, so you should call the function."
                     )
                 }
             ]
@@ -1185,7 +1203,9 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
 
     if not is_genetic:
         # Check for bean data keywords - broader detection for data analysis
-        bean_keywords = ["yield", "maturity", "cultivar", "variety", "performance", "bean", "production", "steam", "lighthouse", "seal"]
+        bean_keywords = ["yield", "maturity", "cultivar", "variety", "performance", "bean", "production", "steam", "lighthouse", "seal", 
+                        "cranberry", "kidney", "navy", "black", "pinto", "market class", "list all", "beans in ontario", 
+                        "oac", "ac ", "breeding", "trial", "data", "dataset"]
         
         # Add location-based keywords for environmental/weather queries at trial locations
         location_keywords = ["auburn", "blyth", "elora", "granton", "kippen", "monkton", "thorndale", "winchester", "woodstock", 
@@ -1194,16 +1214,27 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
         # Add weather/environmental keywords that should trigger bean data when combined with locations
         weather_keywords = ["temperature", "weather", "precipitation", "humidity", "climate", "environmental", "rainfall", "conditions"]
         
+        # Add climate/future prediction keywords
+        future_climate_keywords = ["2030", "2031", "2032", "2033", "2034", "2035", "2036", "2037", "2038", "2039", 
+                                  "2040", "2041", "2042", "2043", "2044", "2045", "2046", "2047", "2048", "2049",
+                                  "2050", "2051", "2052", "2053", "2054", "2055", "2056", "2057", "2058", "2059",
+                                  "2060", "2061", "2062", "2063", "2064", "2065", "2066", "2067", "2068", "2069",
+                                  "2070", "2071", "2072", "2073", "2074", "2075", "2076", "2077", "2078", "2079",
+                                  "2080", "2081", "2082", "2083", "2084", "2085", "2086", "2087", "2088", "2089",
+                                  "2090", "2091", "2092", "2093", "2094", "2095", "2096", "2097", "2098", "2099",
+                                  "future", "predict", "prediction", "projection", "will be", "climate change", "scenario", "rcp"]
+        
         chart_keywords = ["chart", "plot", "graph", "visualization", "visualize", "show me", "create", "generate", "table", "display"]
         
         # Trigger bean data analysis for relevant questions
         has_bean_keywords = any(keyword in question.lower() for keyword in bean_keywords)
         has_location_keywords = any(keyword in question.lower() for keyword in location_keywords)
         has_weather_keywords = any(keyword in question.lower() for keyword in weather_keywords)
+        has_future_climate_keywords = any(keyword in question.lower() for keyword in future_climate_keywords)
         explicitly_wants_chart = any(keyword in question.lower() for keyword in chart_keywords)
         
-        # Trigger bean data if: regular bean keywords OR (location + weather keywords)
-        should_query_bean_data = has_bean_keywords or (has_location_keywords and has_weather_keywords)
+        # Trigger bean data if: regular bean keywords OR (location + weather keywords) OR future climate keywords
+        should_query_bean_data = has_bean_keywords or (has_location_keywords and has_weather_keywords) or has_future_climate_keywords
                 
         if should_query_bean_data:
             try:

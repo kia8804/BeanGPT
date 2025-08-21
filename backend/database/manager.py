@@ -20,6 +20,7 @@ class DatabaseManager:
         self._uniprot_db: Optional[pd.DataFrame] = None
         self._bean_data: Optional[pd.DataFrame] = None
         self._historical_data: Optional[pd.DataFrame] = None
+        self._climate_data: Optional[pd.DataFrame] = None
 
         
         # Efficient lookup indices for gene operations
@@ -56,6 +57,13 @@ class DatabaseManager:
         if self._historical_data is None:
             self._load_historical_data()
         return self._historical_data
+    
+    @property
+    def climate_data(self) -> pd.DataFrame:
+        """Lazy-loaded climate decade data with RCP scenarios."""
+        if self._climate_data is None:
+            self._load_climate_data()
+        return self._climate_data
     
 
     
@@ -319,6 +327,47 @@ class DatabaseManager:
         except Exception as e:
             raise DatabaseError(f"Failed to load historical dataset: {str(e)}")
 
+    def _load_climate_data(self) -> None:
+        """Load the climate decade data with RCP scenarios for future climate projections."""
+        try:
+            csv_path = "../data/climate_decade.csv"
+            print(f"📈 Loading climate data from: {csv_path}")
+            df = pd.read_csv(csv_path)
+            
+            # Process the climate data
+            # Convert decade to numeric
+            df['Decade'] = pd.to_numeric(df['Decade'], errors='coerce')
+            
+            # Convert climate variables to numeric
+            for col in ['Precipitation', 'Tmin', 'Tmax']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Clean scenario names for easier filtering
+            df['Scenario'] = df['Scenario'].str.replace('RCP_', 'RCP ')
+            
+            # Map scenario names to descriptive labels
+            scenario_mapping = {
+                'RCP 2.5': 'Best Case (RCP 2.5)',
+                'RCP 4.5': 'Normal Case (RCP 4.5)', 
+                'RCP 8.5': 'Worst Case (RCP 8.5)'
+            }
+            df['Scenario_Description'] = df['Scenario'].map(scenario_mapping).fillna(df['Scenario'])
+            
+            # Drop any rows with missing critical data
+            df = df.dropna(subset=['Decade', 'Location', 'Scenario'])
+            
+            self._climate_data = df
+            print(f"✅ Loaded {len(self._climate_data)} climate records")
+            print(f"📊 Climate data covers decades: {df['Decade'].min():.0f}-{df['Decade'].max():.0f}")
+            print(f"📍 Climate locations: {', '.join(sorted(df['Location'].dropna().unique()))}")
+            print(f"🌡️ Climate scenarios: {', '.join(sorted(df['Scenario_Description'].dropna().unique()))}")
+            
+        except FileNotFoundError:
+            raise DatabaseError(f"Climate dataset not found at data/climate_decade.csv")
+        except Exception as e:
+            raise DatabaseError(f"Failed to load climate dataset: {str(e)}")
+
     def get_historical_data_for_location_year(self, location: str, year: int, aggregate: str = 'growing_season') -> pd.DataFrame:
         """Get historical weather data for a specific location and year with optional aggregation."""
         try:
@@ -364,6 +413,71 @@ class DatabaseManager:
             print(f"Error getting historical data: {e}")
             return pd.DataFrame()
 
+    def get_climate_data_for_location_decade(self, location: str, decade: int, scenario: str = 'RCP 4.5') -> pd.DataFrame:
+        """Get climate data for a specific location, decade, and scenario."""
+        try:
+            climate_data = self.climate_data
+            
+            # Handle location mapping if needed (Elora might not be in climate data)
+            location_mapping = {
+                'Elora': 'Fergus',  # Closest location to Elora in climate data
+                'Fergus': 'Fergus',
+                'Woodstock': 'Woodstock',
+                'St. Thomas': 'St. Thomas',
+                'Thorndale': 'Thorndale',
+                'Exeter': 'Exeter',
+                'Kempton': 'Kempton',
+                'Kemptonton': 'Kemptonton',
+                'Timmins': 'Timmins'
+            }
+            
+            # Map location if available
+            mapped_location = location_mapping.get(location, location)
+            
+            # Filter by location and decade
+            filtered = climate_data[
+                (climate_data['Location'] == mapped_location) & 
+                (climate_data['Decade'] == decade)
+            ].copy()
+            
+            # Filter by scenario if specified
+            if scenario:
+                # Handle both "RCP 4.5" and "RCP_4.5" formats
+                scenario_clean = scenario.replace(' ', '_').replace('RCP_', 'RCP ')
+                filtered = filtered[filtered['Scenario'] == scenario_clean]
+            
+            return filtered
+            
+        except Exception as e:
+            print(f"Error getting climate data: {e}")
+            return pd.DataFrame()
+
+    def get_climate_comparison(self, location: str, decade1: int, decade2: int, scenario: str = 'RCP 4.5') -> Dict:
+        """Compare climate data between two decades for a location."""
+        try:
+            data1 = self.get_climate_data_for_location_decade(location, decade1, scenario)
+            data2 = self.get_climate_data_for_location_decade(location, decade2, scenario)
+            
+            if data1.empty or data2.empty:
+                return {}
+            
+            comparison = {
+                'location': location,
+                'scenario': scenario,
+                'decade1': decade1,
+                'decade2': decade2,
+                'precipitation_change': float(data2['Precipitation'].iloc[0] - data1['Precipitation'].iloc[0]),
+                'tmin_change': float(data2['Tmin'].iloc[0] - data1['Tmin'].iloc[0]),
+                'tmax_change': float(data2['Tmax'].iloc[0] - data1['Tmax'].iloc[0]),
+                'data1': data1.iloc[0].to_dict(),
+                'data2': data2.iloc[0].to_dict()
+            }
+            
+            return comparison
+            
+        except Exception as e:
+            print(f"Error getting climate comparison: {e}")
+            return {}
     
     def is_gene_in_databases(self, gene_name: str) -> bool:
         """Check if a gene name exists in either NCBI or UniProt databases using fast lookup."""
