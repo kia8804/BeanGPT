@@ -50,6 +50,9 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     api_key = args.get('api_key')
     if not api_key:
         print("⚠️ No API key provided for chart generation")
+    
+    # Initialize chart_data to avoid UnboundLocalError
+    chart_data = {}
 
     # Debug: Print the arguments received
     print(f"🔍 Bean query args received: {args}")
