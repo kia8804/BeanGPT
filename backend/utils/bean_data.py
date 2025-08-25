@@ -279,7 +279,13 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
                     
                     # Add Ontario context as supplementary
                     response += f"\n---\n\n## 📊 **Supplementary: Ontario Bean Data Context**\n\n"
-                    response += f"For comparison, the Ontario bean trial dataset contains {len(df)} records from {df['Year'].min()}-{df['Year'].max()} covering {', '.join(df['Location'].dropna().unique())}.\n"
+                    # Filter out NaN values and convert to strings
+                    valid_locations = [str(loc) for loc in df['Location'].dropna().unique() if str(loc) != 'nan']
+                    # Get year range safely
+                    year_min = df['Year'].min()
+                    year_max = df['Year'].max()
+                    year_range = f"{year_min:.0f}-{year_max:.0f}" if not (pd.isna(year_min) or pd.isna(year_max)) else "various years"
+                    response += f"For comparison, the Ontario bean trial dataset contains {len(df)} records from {year_range} covering {', '.join(valid_locations)}.\n"
                     
                     return response, response, {}, ""
                 else:
@@ -467,7 +473,9 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
         # Provide context-aware suggestions based on available data
         clarification += "**Available options:**\n"
         clarification += f"- **Cultivars:** {', '.join([str(c) for c in df['Cultivar Name'].dropna().unique()[:8]])}...\n"
-        clarification += f"- **Locations:** {', '.join(df['Location'].dropna().unique()[:5])}\n"
+        # Filter out NaN values and convert to strings, limit to first 5
+        valid_locations = [str(loc) for loc in df['Location'].dropna().unique() if str(loc) != 'nan'][:5]
+        clarification += f"- **Locations:** {', '.join(valid_locations)}\n"
         clarification += f"- **Years:** {min(df['Year'].dropna())}-{max(df['Year'].dropna())}\n"
         
         return {}, True, clarification
@@ -775,8 +783,14 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
                         data_period = f"{year_filter}"
                     else:
                         # Get recent years data (last 5 years)
-                        location_data = location_data[location_data['Year'] >= (location_data['Year'].max() - 4)]
-                        data_period = f"{location_data['Year'].min()}-{location_data['Year'].max()}"
+                        year_max = location_data['Year'].max()
+                        if not pd.isna(year_max):
+                            location_data = location_data[location_data['Year'] >= (year_max - 4)]
+                            year_min_filtered = location_data['Year'].min()
+                            year_max_filtered = location_data['Year'].max()
+                            data_period = f"{year_min_filtered:.0f}-{year_max_filtered:.0f}" if not location_data.empty else "No data"
+                        else:
+                            data_period = "No year data available"
                     
                     if not location_data.empty:
                         # Calculate average conditions
@@ -869,7 +883,10 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
             print(f"⚠️ Error processing weather query: {e}")
             import traceback
             traceback.print_exc()
-    
+
+    # Initialize cultivar_context to avoid UnboundLocalError
+    cultivar_context = ""
+
     if chart_requested and api_key:
         # Generate chart and description - pass cultivar context with environmental info
         if cross_market_issue:
@@ -983,7 +1000,12 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
             
             # Fallback: Use Year column if Released Year not available
             if 'Year' in market_class_data.columns:
-                latest_trial_year = int(market_class_data['Year'].max())
+                year_max = market_class_data['Year'].max()
+                if not pd.isna(year_max):
+                    latest_trial_year = int(year_max)
+                else:
+                    # If all years are NaN, skip this processing
+                    return response, response, {}, ""
                 latest_year_data = market_class_data[market_class_data['Year'] == latest_trial_year]
                 unique_latest_cultivars = sorted(latest_year_data['Cultivar Name'].unique())
                 
@@ -1034,18 +1056,38 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
         
         # Add specific data insights for mentioned cultivars with enriched information
         for cultivar in mentioned_cultivars:
+            # Reset limited data flag for each cultivar
+            has_limited_data = False
             cultivar_data = df[df['Cultivar Name'] == cultivar]
             if not cultivar_data.empty:
                     response += f"**{cultivar} Performance:**\n"
                     response += f"- **Records:** {len(cultivar_data)} trials\n"
-                    
-                    # Core performance metrics
+
+                    # Check if cultivar has limited data (NaN values for key metrics)
+                    has_limited_data = False
                     if 'Yield' in cultivar_data.columns:
                         avg_yield = cultivar_data['Yield'].mean()
-                        response += f"- **Average yield:** {avg_yield:.2f} kg/ha\n"
+                        if pd.isna(avg_yield):
+                            has_limited_data = True
+                            response += f"- **Average yield:** Data not available\n"
+                        else:
+                            response += f"- **Average yield:** {avg_yield:.2f} kg/ha\n"
+                    else:
+                        has_limited_data = True
+                        response += f"- **Average yield:** Column not available\n"
+
                     if 'Maturity' in cultivar_data.columns:
                         avg_maturity = cultivar_data['Maturity'].mean()
-                        response += f"- **Average maturity:** {avg_maturity:.1f} days\n"
+                        if pd.isna(avg_maturity):
+                            if not has_limited_data:  # Only set to True if not already True
+                                has_limited_data = True
+                            response += f"- **Average maturity:** Data not available\n"
+                        else:
+                            response += f"- **Average maturity:** {avg_maturity:.1f} days\n"
+                    else:
+                        if not has_limited_data:  # Only set to True if not already True
+                            has_limited_data = True
+                        response += f"- **Average maturity:** Column not available\n"
                     
                     # Enriched breeding information
                     if 'Market Class' in cultivar_data.columns:
@@ -1074,18 +1116,58 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
                     
                     if resistance_traits:
                         response += f"- **Disease resistance:** {', '.join(resistance_traits)}\n"
-                    
+
+                    # If cultivar has limited data, perform web search to supplement information
+                    if has_limited_data and api_key:
+                        try:
+                            print(f"🌐 Detected limited data for {cultivar}, performing web search...")
+                            from .web_search import perform_web_search
+
+                            # Create focused search query for cultivar information
+                            search_query = f"{cultivar} dry bean cultivar performance yield maturity disease resistance"
+
+                            web_results, sources = perform_web_search(search_query, api_key)
+
+                            if web_results and web_results.strip():
+                                response += f"\n**🌐 Supplementary Web Information for {cultivar}:**\n"
+                                response += f"*Note: Limited performance data available locally. The following information is sourced from web search to provide more comprehensive details.*\n\n"
+                                response += f"{web_results}\n"
+
+                                if sources:
+                                    response += f"**Sources:** "
+                                    for i, source in enumerate(sources, 1):
+                                        response += f"[Web-{i}]({source}) "
+                                    response += "\n"
+                                else:
+                                    response += f"*Additional information sourced from web search*\n"
+                            else:
+                                print(f"⚠️ No web results found for {cultivar}")
+                        except Exception as e:
+                            print(f"⚠️ Web search failed for {cultivar}: {e}")
+
                     # Trial context
                     if 'Year' in cultivar_data.columns:
-                        years = f"{cultivar_data['Year'].min():.0f}-{cultivar_data['Year'].max():.0f}"
-                        response += f"- **Years tested:** {years}\n"
-                    response += f"- **Locations:** {', '.join(cultivar_data['Location'].unique())}\n"
+                        year_min = cultivar_data['Year'].min()
+                        year_max = cultivar_data['Year'].max()
+                        if not pd.isna(year_min) and not pd.isna(year_max):
+                            years = f"{year_min:.0f}-{year_max:.0f}"
+                            response += f"- **Years tested:** {years}\n"
+                    # Filter out NaN values and convert to strings
+                    valid_locations = [str(loc) for loc in cultivar_data['Location'].dropna().unique() if str(loc) != 'nan']
+                    response += f"- **Locations:** {', '.join(valid_locations)}\n"
                     
                     # Add environmental context if available
                     if historical_data_available and 'Year' in cultivar_data.columns and 'Location' in cultivar_data.columns:
                         sample_location = cultivar_data['Location'].iloc[0]
-                        sample_year = int(cultivar_data['Year'].iloc[0])
-                        env_data = db_manager.get_historical_data_for_location_year(sample_location, sample_year, 'growing_season')
+                        year_value = cultivar_data['Year'].iloc[0]
+
+                        # Check if both location and year values are valid (not NaN) before proceeding
+                        if not pd.isna(sample_location) and not pd.isna(year_value):
+                            sample_year = int(year_value)
+                            env_data = db_manager.get_historical_data_for_location_year(sample_location, sample_year, 'growing_season')
+                        else:
+                            # Skip environmental data if location or year is invalid
+                            env_data = pd.DataFrame()  # Empty DataFrame to skip processing
                         if not env_data.empty:
                             if 'Temperature' in env_data.columns:
                                 avg_temp = env_data['Temperature'].iloc[0]
@@ -1140,7 +1222,11 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
                             response += ")\n"
 
         # Add overall dataset context
-        response += f"**📊 Dataset context:** {len(df)} total records, {df['Year'].min()}-{df['Year'].max()}\n"
+        # Get year range safely for dataset context
+        year_min = df['Year'].min()
+        year_max = df['Year'].max()
+        year_range = f"{year_min:.0f}-{year_max:.0f}" if not (pd.isna(year_min) or pd.isna(year_max)) else "various years"
+        response += f"**📊 Dataset context:** {len(df)} total records, {year_range}\n"
         
         # CRITICAL: If no specific cultivars mentioned but question asks about performance, show top performers
         performance_keywords = ['perform', 'best', 'top', 'highest', 'yield', 'productive', 'leading']
@@ -1293,7 +1379,13 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
             
             # Add Ontario context as supplementary information
             response += f"\n---\n\n## 📊 **Supplementary: Ontario Bean Data Context**\n\n"
-            response += f"For comparison, the Ontario bean trial dataset contains {len(df)} records from {df['Year'].min()}-{df['Year'].max()} covering {', '.join(df['Location'].dropna().unique())}.\n"
+            # Filter out NaN values and convert to strings
+            valid_locations = [str(loc) for loc in df['Location'].dropna().unique() if str(loc) != 'nan']
+            # Get year range safely for comparison
+            year_min = df['Year'].min()
+            year_max = df['Year'].max()
+            year_range = f"{year_min:.0f}-{year_max:.0f}" if not (pd.isna(year_min) or pd.isna(year_max)) else "various years"
+            response += f"For comparison, the Ontario bean trial dataset contains {len(df)} records from {year_range} covering {', '.join(valid_locations)}.\n"
             
             return response, response, {}, ""
         
@@ -1314,8 +1406,14 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
             response += f"**🌱 Cultivars mentioned:** {', '.join([str(c) for c in mentioned_cultivars])}\n\n"
         
         response += f"**📊 Dataset:** {len(df)} records from Ontario bean trials\n"
-        response += f"**📅 Years:** {df['Year'].min()}-{df['Year'].max()}\n"
-        response += f"**📍 Locations:** {', '.join(df['Location'].dropna().unique())}\n\n"
+        # Get year range safely for years display
+        year_min = df['Year'].min()
+        year_max = df['Year'].max()
+        year_range = f"{year_min:.0f}-{year_max:.0f}" if not (pd.isna(year_min) or pd.isna(year_max)) else "various years"
+        response += f"**📅 Years:** {year_range}\n"
+        # Filter out NaN values and convert to strings
+        valid_locations = [str(loc) for loc in df['Location'].dropna().unique() if str(loc) != 'nan']
+        response += f"**📍 Locations:** {', '.join(valid_locations)}\n\n"
         
         # Add summary statistics
         if 'Cultivar Name' in df.columns:

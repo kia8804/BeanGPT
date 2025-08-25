@@ -320,7 +320,9 @@ class DatabaseManager:
             self._historical_data = df
             print(f"✅ Loaded {len(self._historical_data)} historical weather records with {len(weather_columns)} weather variables")
             print(f"📊 Weather data covers: {df['Year'].min():.0f}-{df['Year'].max():.0f}")
-            print(f"📍 Historical locations: {', '.join(sorted(df['Location'].dropna().unique()))}")
+            # Filter out NaN values and convert to strings
+            valid_locations = [str(loc) for loc in df['Location'].dropna().unique() if str(loc) != 'nan']
+            print(f"📍 Historical locations: {', '.join(sorted(valid_locations))}")
             
         except FileNotFoundError:
             raise DatabaseError(f"Historical dataset not found at {settings.historical_data_path}")
@@ -360,7 +362,9 @@ class DatabaseManager:
             self._climate_data = df
             print(f"✅ Loaded {len(self._climate_data)} climate records")
             print(f"📊 Climate data covers decades: {df['Decade'].min():.0f}-{df['Decade'].max():.0f}")
-            print(f"📍 Climate locations: {', '.join(sorted(df['Location'].dropna().unique()))}")
+            # Filter out NaN values and convert to strings
+            valid_locations = [str(loc) for loc in df['Location'].dropna().unique() if str(loc) != 'nan']
+            print(f"📍 Climate locations: {', '.join(sorted(valid_locations))}")
             print(f"🌡️ Climate scenarios: {', '.join(sorted(df['Scenario_Description'].dropna().unique()))}")
             
         except FileNotFoundError:
