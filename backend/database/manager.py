@@ -224,7 +224,7 @@ class DatabaseManager:
             # Handle new column structure (Merged_Bean_data_update.xlsx format)
             column_mapping = {
                 'Name': 'Cultivar Name',  # Map 'Name' to 'Cultivar Name' for compatibility
-                'Grow Year': 'Year',       # Map 'Grow Year' to 'Year' for compatibility
+                # 'Grow Year': 'Year',       # Keep original column name
                 'Harvestability': 'Dir Harv Suit'  # Map new to old column name
             }
             

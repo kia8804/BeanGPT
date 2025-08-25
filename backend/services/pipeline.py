@@ -821,7 +821,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                     args['original_question'] = question
                     args['api_key'] = api_key
                     
-                    preview, full_md, chart_data = answer_bean_query(args)
+                    preview, full_md, chart_data, cultivar_context = answer_bean_query(args)
                     
                     if preview and not preview.strip().startswith("## 🔍 **Dataset Query Results**\n\nNo matching"):
                         yield {"type": "progress", "data": {"step": "dataset_success", "detail": "Found matching data"}}
@@ -829,6 +829,13 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                         # Generate natural language summary
                         yield {"type": "progress", "data": {"step": "generation", "detail": "Creating analysis summary"}}
                         
+                        # Debug: Print what data we're sending to the AI
+                        print(f"DEBUG: Sending to AI summary - preview length: {len(preview)}")
+                        print(f"DEBUG: Preview starts with: {preview[:300]}...")
+                        if len(preview) > 1000:
+                            print(f"DEBUG: Preview middle section: ...{preview[500:800]}...")
+                            print(f"DEBUG: Preview ends with: ...{preview[-200:]}")
+
                         summary_response = client.chat.completions.create(
                             model="gpt-4o",
                             messages=[
@@ -837,7 +844,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                     "content": (
                                         "You are a dry bean research analyst reporting to PhD-level researchers.\n"
                                         "You must present only direct statistical findings, comparisons, and evidence-based conclusions using the Ontario trial dataset.\n\n"
-                                        
+                                        "🚨 ABSOLUTE LIST ALL REQUIREMENT: If the user asks 'list all', 'show all', 'what are all', or similar phrases requesting complete lists, you MUST provide EVERY SINGLE item from the dataset. Do NOT summarize, truncate, or show only 'top' performers. List ALL items with their complete data in numbered format.\n\n"
                                         "⚠️ CRITICAL BEHAVIOR - ABSOLUTE RULES\n"
                                         "• NEVER provide analysis steps or recommendations\n"
                                         "• 🚨 CRITICAL: NEVER invent cultivar names like \"Cultivar A\", \"Cultivar B\", \"Cultivar C\", \"Cultivar X\", etc.\n"
@@ -846,7 +853,8 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                         "• NEVER say \"sample data\" — this is the complete dataset\n"
                                         "• NEVER generate vague placeholder values like [specific yield]\n"
                                         "• 🚨 PROVIDE CONCRETE AVERAGES: When comparing market classes, calculate and state the actual average values (e.g., 'Kidney beans: 3,200 kg/ha average yield, 95 days average maturity'). Never say 'would need to be extracted' - extract and calculate them immediately\n"
-                                        "• 🚨 KIDNEY BEAN IDENTIFICATION: Kidney beans include ANY Market Class containing 'kidney' (case-insensitive): kidney, Kidney, white kidney, dark red kidney, light red kidney, dark red kidney bean, light red kidney bean. The dataset DOES contain kidney bean data - analyze it properly!\n\n"
+                                        "• 🚨 KIDNEY BEAN IDENTIFICATION: Kidney beans include ANY Market Class containing 'kidney' (case-insensitive): kidney, Kidney, white kidney, dark red kidney, light red kidney, dark red kidney bean, light red kidney bean. The dataset DOES contain kidney bean data - analyze it properly!\n"
+                                        "• 🚨 CULTIVAR CORRECTION: If the user misspelled a cultivar name and it was automatically corrected during processing, focus your analysis on the CORRECTED cultivar name, not the original misspelling. Use the corrected name in all your analysis and comparisons.\n"
                                         
                                         "📊 DATA CONTEXT\n"
                                         "You have access to TWO comprehensive datasets:\n"
@@ -912,7 +920,7 @@ async def answer_question_stream(question: str, conversation_history: List[Dict]
                                 },
                                 {
                                     "role": "user",
-                                    "content": f"Based on the question '{question}', analyze this data:\n\n**MAIN DATASET:**\n{preview}\n\n**HISTORICAL DATA AVAILABLE:**\nHistorical data is also available for additional context and pedigree information. Include relevant historical insights when applicable.\n\n🚨 KIDNEY BEAN DATA CONFIRMATION: The dataset DOES contain kidney bean data for 2024 (48 records across 16 cultivars). Market classes include: Dark Red Kidney, Light Red Kidney, White Kidney, kidney, white kidney. DO NOT say there is no kidney bean data available.\n\n🚨 MARKET CLASS AVERAGES: When comparing market classes, ALWAYS calculate and provide the average yield, maturity, and other metrics directly from the dataset. DO NOT say you need to extract data or that specific data would need to be extracted - calculate the averages immediately and present them. For example: 'Kidney beans average yield: 3,200 kg/ha, average maturity: 95 days'.\n\n🚨 REMINDER: Use ONLY the actual cultivar names shown in the data above. DO NOT invent names like 'Cultivar A, B, C' - use the real names from the dataset!"
+                                    "content": f"Based on the question '{question}', analyze this data:\n\n**MAIN DATASET:**\n{preview}\n\n**HISTORICAL DATA AVAILABLE:**\nHistorical data is also available for additional context and pedigree information. Include relevant historical insights when applicable.\n\n🚨 KIDNEY BEAN DATA CONFIRMATION: The dataset DOES contain kidney bean data for 2024 (48 records across 16 cultivars). Market classes include: Dark Red Kidney, Light Red Kidney, White Kidney, kidney, white kidney. DO NOT say there is no kidney bean data available.\n\n🚨 MARKET CLASS AVERAGES: When comparing market classes, ALWAYS calculate and provide the average yield, maturity, and other metrics directly from the dataset. DO NOT say you need to extract data or that specific data would need to be extracted - calculate the averages immediately and present them. For example: 'Kidney beans average yield: 3,200 kg/ha, average maturity: 95 days'.\n\n🚨 LIST ALL REQUIREMENT: If the question contains 'list all', 'show all', 'all X beans', or similar phrases asking for complete lists, you MUST show EVERY SINGLE cultivar/variety in the dataset. Do NOT summarize or show only top performers - provide the complete numbered list with ALL available data for each item. For example, if there are 18 cultivars, list all 18 with their complete information.\n\n🚨 REMINDER: Use ONLY the actual cultivar names shown in the data above. DO NOT invent names like 'Cultivar A, B, C' - use the real names from the dataset!\n\n{cultivar_context}"
                                 }
                             ],
                             temperature=0.3,
@@ -1267,7 +1275,7 @@ def answer_question(question: str, conversation_history: List[Dict] = None, api_
                         args['original_question'] = question
                         args['api_key'] = api_key
                         
-                        preview, full_md, chart_data = answer_bean_query(args)
+                        preview, full_md, chart_data, cultivar_context = answer_bean_query(args)
                         
                         if preview and len(preview) > 20:  # Valid response
                             # Add transition message for research papers

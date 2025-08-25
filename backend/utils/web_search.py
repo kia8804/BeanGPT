@@ -88,7 +88,16 @@ def perform_web_search(question: str, api_key: str) -> Tuple[str, List[str]]:
                 "type": "web_search_preview",  # Using preview version as shown in docs
                 "search_context_size": "medium"  # balanced context and latency
             }],
-            input=f"Search for current information about: {question}. Focus on recent data, statistics, and authoritative sources."
+            input=f"""Search for current information about: {question}
+            
+            CRITICAL REQUIREMENTS:
+            1. Focus on recent data, statistics, and authoritative sources
+            2. For bean/cultivar questions, prioritize agricultural extension services, research stations, and seed companies
+            3. Include specific cultivar names, release dates, and performance data when available
+            4. For regional questions (provinces/states), include region-specific breeding programs and varieties
+            5. Format information with clear sections and bullet points
+            6. Include source citations as [Web-1], [Web-2], etc.
+            """
         )
         
         # Extract the response content
@@ -118,6 +127,8 @@ def perform_web_search(question: str, api_key: str) -> Tuple[str, List[str]]:
         print(f"🌐 Web search completed for: {question}")
         print(f"📝 Search result length: {len(search_content)} characters")
         print(f"🔗 Found {len(source_urls)} source URLs")
+        print(f"📄 Web search content:\n{search_content}\n")
+        print(f"🔗 Source URLs:\n" + "\n".join(source_urls))
         
         return search_content, source_urls
         

@@ -569,7 +569,7 @@ def generate_plotly_code(client, prompt: str, df: pd.DataFrame) -> str:
         {"role": "user", "content": f"Sample categorical values: {categorical_info}"},
         {"role": "user", "content": f"Sample data (first 3 rows): {rows[:3]}"},
         {"role": "user", "content": "CRITICAL MARKET CLASS FILTERING: Use the 'Market Class' column for proper bean type filtering. Kidney beans = anything with 'kidney' in Market Class (case-insensitive: 'kidney', 'Kidney', 'white kidney', 'dark red kidney', 'light red kidney', 'dark red kidney bean', 'light red kidney bean'). Navy beans = 'White Navy' in Market Class. IMPORTANT: When user asks for kidney beans, filter by Market Class containing 'kidney', not by bean_type column. CROSS-MARKET COMPARISONS: When comparing different market classes, you MUST show BOTH the specific cultivar (RED) AND the market class data (BLUE) on the same chart. Do NOT show only one or the other."},
-        {"role": "user", "content": "🎯 PERFORMANCE PLOT RULE: When user asks about 'performance' or 'comparing performance' of cultivars, create a SCATTER PLOT with: X-axis = Days to Maturity (Maturity column), Y-axis = Yield (kg/ha). Each cultivar should be ONE POINT (average across all locations). Label each point with cultivar name. Add regression line if multiple cultivars. DO NOT create line charts by location for performance comparisons. REQUIRED CODE PATTERN: ```python\n# Filter data\nfiltered_data = df[(df['Year'] == 2024) & (df['Market Class'].str.contains('cranberry', case=False, na=False))]\n# Group by cultivar and calculate averages\ncultivars_avg = filtered_data.groupby('Cultivar Name')[['Yield', 'Maturity']].mean().reset_index()\n# Create scatter plot\nfig.add_trace(go.Scatter(x=cultivars_avg['Maturity'], y=cultivars_avg['Yield'], mode='markers+text', text=cultivars_avg['Cultivar Name'], textposition='top center'))\n```"},
+        {"role": "user", "content": "🎯 PERFORMANCE PLOT RULE: When user asks about 'performance' or 'comparing performance' of cultivars, create a SCATTER PLOT with: X-axis = Days to Maturity (Maturity column), Y-axis = Yield (kg/ha). Each cultivar should be ONE POINT (average across all locations). Label each point with cultivar name. Add regression line if multiple cultivars. DO NOT create line charts by location for performance comparisons. CRITICAL: When user mentions a specific cultivar, highlight it in RED with larger markers.\n\n🚨 MANDATORY STEP-BY-STEP INSTRUCTIONS:\n\n1. FIRST: Check if the CONTEXT contains 'HIGHLIGHT_CULTIVAR:'\n2. IF FOUND: Extract the cultivar name after 'HIGHLIGHT_CULTIVAR:' and use it for highlighting\n3. IF NOT FOUND: Only then check the user request for valid cultivar names\n\n❌ NEVER extract cultivar names directly from user request when context is available\n❌ NEVER use misspelled names for highlighting\n\n✅ REQUIRED CODE PATTERN - COPY THIS EXACT STRUCTURE: ```python\n# Step 1: Initialize\nfig = go.Figure()\ntarget_cultivar = None\n\n# Step 2: MANDATORY - Check context first\nif 'HIGHLIGHT_CULTIVAR:' in 'PLACEHOLDER_CONTEXT':\n    start_idx = 'PLACEHOLDER_CONTEXT'.find('HIGHLIGHT_CULTIVAR:') + len('HIGHLIGHT_CULTIVAR:')\n    cultivar_part = 'PLACEHOLDER_CONTEXT'[start_idx:].strip()\n    target_cultivar = cultivar_part.split(',')[0].strip()\n    print(f\"DEBUG: Found cultivar in context: {target_cultivar}\")\n\n# Step 3: Only if no context, check user request\nif target_cultivar is None:\n    for word in 'PLACEHOLDER_REQUEST'.split():\n        if word in df['Cultivar Name'].values:\n            target_cultivar = word\n            print(f\"DEBUG: Found cultivar in request: {target_cultivar}\")\n            break\n\n# Step 4: Filter and plot\nfiltered_data = df[(df['Year'] == 2024) & (df['Market Class'].str.contains('dark red kidney', case=False, na=False))]\ncultivars_avg = filtered_data.groupby('Cultivar Name')[['Yield', 'Maturity']].mean().reset_index()\n\ncolors = ['red' if x == target_cultivar else 'blue' for x in cultivars_avg['Cultivar Name']]\nsizes = [15 if x == target_cultivar else 10 for x in cultivars_avg['Cultivar Name']]\n\nfig.add_trace(go.Scatter(\n    x=cultivars_avg['Maturity'],\n    y=cultivars_avg['Yield'],\n    mode='markers+text',\n    text=cultivars_avg['Cultivar Name'],\n    textposition='top center',\n    marker=dict(color=colors, size=sizes, line=dict(color='black', width=1))\n))\n\nif len(cultivars_avg) > 1:\n    slope, intercept, r_value, p_value, std_err = stats.linregress(cultivars_avg['Maturity'], cultivars_avg['Yield'])\n    line_x = np.linspace(cultivars_avg['Maturity'].min(), cultivars_avg['Maturity'].max(), 100)\n    line_y = slope * line_x + intercept\n    fig.add_trace(go.Scatter(x=line_x, y=line_y, mode='lines', name=f'Regression (R² = {r_value**2:.3f})', line=dict(color='gray', width=2, dash='dash')))\n\nfig.update_layout(title='Dark Red Kidney Bean Performance Comparison 2024', xaxis_title='Days to Maturity', yaxis_title='Yield (kg/ha)', height=450, width=900)\n```"},
         {"role": "user", "content": "ENHANCED DATA CONTEXT: This dataset includes enriched breeding information - Market Class, Pedigree, Released Year, Disease Resistance markers (Common Mosaic Virus R1/R15, Anthracnose R17/R23/R73, Common Blight). IMPORTANT: Historical weather data is available in a separate dataset that can be accessed via db_manager.historical_data - it contains 15+ weather variables by location and year that can be linked to bean performance. CRITICAL LOCATION AGGREGATION: When showing performance by location, always group by location and calculate averages - don't show multiple data points per location unless explicitly requested."},
         {"role": "user", "content": f"User request: {prompt}"},
         {"role": "user", "content": "CRITICAL: Extract any cultivar names mentioned in the user request and use them in your analysis"},
@@ -630,11 +630,12 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
     print("─" * 60, "\nLLM-generated Plotly code:\n", code, "\n", "─" * 60)
 
     try:
-        # Simple execution for research use
-        exec(code, safe_globals, local_ns)
+        # Merge namespaces to fix variable scoping issues in list comprehensions
+        combined_globals = {**safe_globals, **local_ns}
+        exec(code, combined_globals, combined_globals)
         
         # Check if any filtered dataframes in the code resulted in empty data
-        for var_name, var_value in local_ns.items():
+        for var_name, var_value in combined_globals.items():
             if isinstance(var_value, pd.DataFrame) and var_name.endswith('_data') and var_value.empty:
                 print(f"⚠️ Warning: {var_name} is empty after filtering")
                 
@@ -663,16 +664,16 @@ def run_generated_code(code: str, df: pd.DataFrame) -> go.Figure:
                 return None
         
         # Preferred: a variable named `fig`
-        fig = local_ns.get("fig") or safe_globals.get("fig")
+        fig = combined_globals.get("fig")
         
         # Check if LLM deliberately set fig = None (smart chart prevention)
-        if fig is None and "fig" in local_ns:
+        if fig is None and "fig" in combined_globals:
             print("💡 LLM deliberately set fig = None - preventing useless chart")
             return None
 
         # Fallback: first Figure object we can find
         if fig is None:
-            for v in list(local_ns.values()) + list(safe_globals.values()):
+            for v in combined_globals.values():
                 if isinstance(v, go.Figure):
                     fig = v
                     break
@@ -772,8 +773,14 @@ def create_smart_chart(df: pd.DataFrame, user_request: str, api_key: str, contex
         # Build comprehensive prompt for GPT-4o
         prompt = f"{user_request}"
         if context:
-            prompt += f" Context: {context}"
+            prompt += f"\n\nCONTEXT INFORMATION: {context}"
+            prompt += f"\n\nDEBUG: Context contains 'HIGHLIGHT_CULTIVAR:' = {'HIGHLIGHT_CULTIVAR:' in context}"
         
+        # Debug: Print what we're sending to the LLM
+        print(f"DEBUG: User request: {user_request}")
+        print(f"DEBUG: Context being sent: {context}")
+        print(f"DEBUG: Context contains HIGHLIGHT_CULTIVAR: {'HIGHLIGHT_CULTIVAR:' in context}")
+
         # Let GPT-4o analyze the data and create the perfect chart
         code = generate_plotly_code(client, prompt, df)
         

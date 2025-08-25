@@ -12,7 +12,7 @@ import numpy as np
 from .simple_plotly import create_smart_chart
 from database.manager import db_manager
 
-def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
+def answer_bean_query(args: Dict) -> Tuple[str, str, Dict, str]:
     """
     ENHANCED VERSION: Analyze enriched bean data with historical context and optional chart generation.
     Now includes pedigree, market class, disease resistance, and environmental data.
@@ -57,8 +57,33 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     # Debug: Print the arguments received
     print(f"🔍 Bean query args received: {args}")
     
-    # NO FILTERING - Pass full dataset to GPT always
+    # Apply market class filtering if specified
     df = df_trials.copy()
+    
+    # Filter by market class if provided in args
+    market_class_input = args.get('market_class')
+    if market_class_input:
+        print(f"🔍 Filtering by market class: {market_class_input}")
+        
+        # Handle common market class variations
+        if market_class_input.lower() in ['dark red kidney', 'dark red kidney bean', 'red kidney']:
+            df = df[df['Market Class'].str.contains('dark red kidney', case=False, na=False)]
+        elif market_class_input.lower() in ['kidney', 'kidney bean']:
+            df = df[df['Market Class'].str.contains('kidney', case=False, na=False)]
+        elif market_class_input.lower() in ['navy', 'white navy', 'navy bean']:
+            df = df[df['Market Class'].str.contains('navy', case=False, na=False)]
+        elif market_class_input.lower() in ['black', 'black bean']:
+            df = df[df['Market Class'].str.contains('black', case=False, na=False)]
+        elif market_class_input.lower() in ['cranberry', 'cranberry bean']:
+            df = df[df['Market Class'].str.contains('cranberry', case=False, na=False)]
+        else:
+            # Generic filtering for other market classes
+            df = df[df['Market Class'].str.contains(market_class_input, case=False, na=False)]
+        
+        print(f"✅ Filtered dataset: {len(df)} records for {market_class_input}")
+        
+        if df.empty:
+            return f"No data found for market class '{market_class_input}' in the dataset.", "", {}
     print(f"📊 Passing FULL dataset to GPT: {len(df)} rows")
 
     # Get the original question for analysis
@@ -161,7 +186,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                 
                 response += f"*Climate projections are based on Representative Concentration Pathways (RCP) scenarios from IPCC climate models.*\n"
                 
-                return response, response, {}
+                return response, response, {}, ""
             else:
                 return f"**⚠️ No climate data available for {location_input} in {climate_decade}s under {climate_scenario} scenario**", "", {}
         else:
@@ -182,7 +207,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
             response += f"\n**📅 Available Decades**: 2030s, 2040s, 2050s, 2060s, 2070s, 2080s, 2090s\n"
             response += f"**💡 Try asking**: 'How will the climate be in {location_input} in 2045?' or 'Compare {location_input} climate in 2030 vs 2060'\n"
             
-            return response, response, {}
+            return response, response, {}, ""
     
     # Check if question mentions regions/locations not in the Ontario dataset
     # Get all unique locations in the dataset for comparison
@@ -236,13 +261,39 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
             try:
                 from .web_search import perform_web_search
                 web_results, sources = perform_web_search(original_question, api_key)
-                web_context = web_results
-                web_sources = sources
-                print(f"🌐 Web search completed - found {len(sources)} sources")
+                
+                # If we got web results, use them directly
+                if web_results:  # Only check for web_results, not sources (URLs may not be extracted)
+                    web_context = web_results  # Use web results directly
+                    web_sources = sources if sources else []  # Use sources if available, empty list if not
+                    print(f"🌐 Web search completed - found {len(sources)} sources")
+                    print(f"📝 Web context length: {len(web_context)} characters")
+                    
+                    # For non-Ontario queries with web results, return immediately with web info
+                    response = f"## 🌐 **Navy Bean Cultivars in Manitoba**\n\n"
+                    response += web_context
+                    if sources:
+                        response += "\n\n**Sources:**\n"
+                        for i, source in enumerate(sources, 1):
+                            response += f"{i}. {source}\n"
+                    
+                    # Add Ontario context as supplementary
+                    response += f"\n---\n\n## 📊 **Supplementary: Ontario Bean Data Context**\n\n"
+                    response += f"For comparison, the Ontario bean trial dataset contains {len(df)} records from {df['Year'].min()}-{df['Year'].max()} covering {', '.join(df['Location'].dropna().unique())}.\n"
+                    
+                    return response, response, {}, ""
+                else:
+                    web_context = ""
+                    web_sources = []
+                    print("⚠️ No web results found")
             except Exception as e:
                 print(f"⚠️ Web search failed: {e}")
+                web_context = ""
+                web_sources = []
         else:
             print("⚠️ No API key available for web search")
+            web_context = ""
+            web_sources = []
     
     # Add analysis details based on the question - dynamically detect cultivar names
     def find_mentioned_cultivars(question_text, df):
@@ -287,6 +338,8 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         if partial_match:
             print(f"🔧 Fixed cultivar parameter: '{function_call_cultivar}' -> '{partial_match}'")
             args['cultivar'] = partial_match
+            # Update mentioned_cultivars with corrected name
+            mentioned_cultivars = [partial_match]
         else:
             # Try fuzzy matching
             similar_cultivars = all_cultivars[all_cultivars.str.contains(function_call_cultivar.split()[0] if ' ' in function_call_cultivar else function_call_cultivar[:5], case=False, na=False)]
@@ -295,19 +348,29 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                 # Use the first similar cultivar
                 args['cultivar'] = similar_cultivars.iloc[0]
                 print(f"🔧 Fixed cultivar parameter: '{function_call_cultivar}' -> '{args['cultivar']}'")
+                # Update mentioned_cultivars with corrected name
+                mentioned_cultivars = [args['cultivar']]
             else:
                 print(f"❌ No similar cultivars found. Removing invalid cultivar parameter.")
                 args.pop('cultivar', None)  # Remove the invalid parameter
-    
+
     # Track if we removed an invalid cultivar for user notification
-    invalid_cultivar_mentioned = function_call_cultivar and function_call_cultivar not in df['Cultivar Name'].values
+    # Only consider it invalid if we couldn't find a correction
+    invalid_cultivar_mentioned = function_call_cultivar and function_call_cultivar not in df['Cultivar Name'].values and not mentioned_cultivars
     invalid_cultivar_name = function_call_cultivar if invalid_cultivar_mentioned else None
+
+    # After cultivar correction, update the original cultivar name tracking
+    if function_call_cultivar and function_call_cultivar != args.get('cultivar'):
+        print(f"📝 Original cultivar name was '{function_call_cultivar}', corrected to '{args.get('cultivar')}'")
     
     # Override function call parameters with correctly detected cultivars
     if mentioned_cultivars:
         # Update the cultivar parameter with the first detected cultivar
-        args['cultivar'] = str(mentioned_cultivars[0])
-        print(f"🔧 Fixed cultivar parameter: '{args.get('cultivar', 'None')}' -> '{mentioned_cultivars[0]}'")
+        corrected_cultivar = str(mentioned_cultivars[0])
+        args['cultivar'] = corrected_cultivar
+        print(f"🔧 Fixed cultivar parameter: '{args.get('cultivar', 'None')}' -> '{corrected_cultivar}'")
+        # Update mentioned_cultivars with the corrected name to ensure consistency
+        mentioned_cultivars = [corrected_cultivar]
     
     # Check for cross-market class comparison issues
     cross_market_issue = None
@@ -542,7 +605,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                         response += web_response
                         response += f"\n\n*🔗 Web sources are linked above for verification*\n"
                     
-                    return response, response, {}
+                    return response, response, {}, ""
                 else:
                     return f"**⚠️ No cultivar data found for {hottest_location}**", "", {}
             else:
@@ -645,7 +708,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                         response += web_response
                         response += f"\n\n*🔗 Web sources are linked above for verification*\n"
                     
-                    return response, response, {}
+                    return response, response, {}, ""
                 else:
                     return f"**⚠️ No climate data available for {location_input} in {climate_decade}s under {climate_scenario} scenario**", "", {}
             else:
@@ -666,7 +729,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                 response += f"\n**📅 Available Decades**: 2030s, 2040s, 2050s, 2060s, 2070s, 2080s, 2090s\n"
                 response += f"**💡 Try asking**: 'How will the climate be in {location_input} in 2045?' or 'Compare {location_input} climate in 2030 vs 2060'\n"
                 
-                return response, response, {}
+                return response, response, {}, ""
                 
         except Exception as e:
             print(f"⚠️ Error processing climate prediction query: {e}")
@@ -800,7 +863,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                 weather_response += web_response
                 weather_response += f"\n\n*🔗 Web sources are linked above for verification*\n"
             
-            return weather_response, weather_response, {}
+            return weather_response, weather_response, {}, ""
             
         except Exception as e:
             print(f"⚠️ Error processing weather query: {e}")
@@ -809,12 +872,14 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
     
     if chart_requested and api_key:
         # Generate chart and description - pass cultivar context with environmental info
-        if invalid_cultivar_mentioned:
-            cultivar_context = f"IMPORTANT: The cultivar '{invalid_cultivar_name}' mentioned in the request does not exist in the dataset. Do not highlight or reference it in the chart. Show only valid cultivars from the dataset."
-        elif cross_market_issue:
+        if cross_market_issue:
             cultivar_context = f"CROSS-MARKET COMPARISON: {cross_market_issue['cultivar']} is a {cross_market_issue['actual_market_class']} bean, while user requested {cross_market_issue['requested_market_class']} beans. Create a chart showing {cross_market_issue['cultivar']} performance compared to {cross_market_issue['requested_market_class']} beans. Use DIFFERENT COLORS for different market classes - highlight {cross_market_issue['cultivar']} ({cross_market_issue['actual_market_class']}) in RED and {cross_market_issue['requested_market_class']} beans in BLUE. Include both market classes in the title and legend for clarity."
         elif mentioned_cultivars:
-            cultivar_context = f"Focus on these cultivars: {', '.join([str(c) for c in mentioned_cultivars])}"
+            # Always use the corrected cultivar names for highlighting, even if original was misspelled
+            cultivar_context = f"HIGHLIGHT_CULTIVAR: {', '.join([str(c) for c in mentioned_cultivars])}"
+        elif invalid_cultivar_mentioned:
+            # Only use this if no valid cultivars were found after correction
+            cultivar_context = f"IMPORTANT: The cultivar '{invalid_cultivar_name}' mentioned in the request does not exist in the dataset. Do not highlight or reference it in the chart. Show only valid cultivars from the dataset."
         else:
             cultivar_context = ""
             
@@ -870,7 +935,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                     response += f"- Average maturity: {total_avg_maturity:.1f} days\n"
                 response += f"- Total trial records: {len(market_class_data)}\n\n"
             
-            return response, response, {}
+            return response, response, {}, ""
     
     # SPECIAL HANDLING: Latest releases for market class queries
     if is_latest_query and market_class_filter:
@@ -914,7 +979,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                         response += f"- Average maturity: {total_avg_maturity:.1f} days\n"
                     response += f"- Total trial records: {len(latest_cultivars_data)}\n\n"
                     
-                    return response, response, {}
+                    return response, response, {}, ""
             
             # Fallback: Use Year column if Released Year not available
             if 'Year' in market_class_data.columns:
@@ -949,13 +1014,13 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                     response += f"- Average maturity: {total_avg_maturity:.1f} days\n"
                 response += f"- Total trial records: {len(latest_year_data)}\n\n"
                 
-                return response, response, {}
+                return response, response, {}, ""
     
     # Create a data-rich response with actual insights
     response = f"## 📊 **Bean Data Analysis**\n\n"
     
-    # CRITICAL: Notify user if invalid cultivar was mentioned
-    if invalid_cultivar_mentioned:
+    # CRITICAL: Notify user if invalid cultivar was mentioned and no valid ones found
+    if invalid_cultivar_mentioned and not mentioned_cultivars:
         response += f"⚠️ **Note:** The cultivar '{invalid_cultivar_name}' was not found in the Ontario bean trial dataset. The analysis below shows navy bean performance patterns without highlighting this specific cultivar.\n\n"
     
     # CRITICAL: Notify user about cross-market class comparison issues
@@ -1030,7 +1095,50 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                                 response += f"- **Growing season precip:** {total_precip:.0f}mm (sample year/location)\n"
                     
                     response += "\n"
-        
+
+        # Add market class comparison context if user asked for comparison
+        comparison_keywords = ['compar', 'versus', 'vs', 'other', 'against', 'with other']
+        if mentioned_cultivars and any(keyword in original_question.lower() for keyword in comparison_keywords) and market_class_input:
+            # Get other cultivars in the same market class
+            market_class_cultivars = df[df['Market Class'].str.contains(market_class_input, case=False, na=False)]['Cultivar Name'].unique()
+            other_cultivars = [c for c in market_class_cultivars if c not in mentioned_cultivars]
+
+            if other_cultivars:
+                response += f"\n**📊 {market_class_input} Market Class Comparison:**\n"
+                response += f"- **Other cultivars in this market class:** {', '.join(other_cultivars[:5])}"
+                if len(other_cultivars) > 5:
+                    response += f" (+{len(other_cultivars)-5} more)"
+                response += "\n"
+
+                # Show performance data for top other cultivars
+                market_class_data = df[df['Market Class'].str.contains(market_class_input, case=False, na=False)]
+                other_performers = market_class_data[~market_class_data['Cultivar Name'].isin(mentioned_cultivars)]
+                if not other_performers.empty and 'Yield' in other_performers.columns:
+                    top_others = other_performers.groupby('Cultivar Name')['Yield'].mean().sort_values(ascending=False).head(3)
+                    response += f"- **Top performers in {market_class_input}:**\n"
+                    for cultivar, avg_yield in top_others.items():
+                        trial_count = len(other_performers[other_performers['Cultivar Name'] == cultivar])
+                        response += f"  - {cultivar}: {avg_yield:.1f} kg/ha ({trial_count} trials)\n"
+
+        # Add year-specific context if specified
+        year_filter = args.get('year')
+        if year_filter:
+            year_data = df[df['Year'] == year_filter]
+            if not year_data.empty:
+                response += f"\n**📅 {year_filter} Data Summary:**\n"
+                response += f"- **Records in {year_filter}:** {len(year_data)}\n"
+                if 'Cultivar Name' in year_data.columns:
+                    unique_cultivars = year_data['Cultivar Name'].nunique()
+                    response += f"- **Cultivars tested in {year_filter}:** {unique_cultivars}\n"
+                    if market_class_input:
+                        market_year_data = year_data[year_data['Market Class'].str.contains(market_class_input, case=False, na=False)]
+                        if not market_year_data.empty:
+                            market_cultivars = market_year_data['Cultivar Name'].nunique()
+                            response += f"- **{market_class_input} cultivars in {year_filter}:** {market_cultivars} ({', '.join(market_year_data['Cultivar Name'].unique()[:3])}"
+                            if market_cultivars > 3:
+                                response += f" +{market_cultivars-3} more"
+                            response += ")\n"
+
         # Add overall dataset context
         response += f"**📊 Dataset context:** {len(df)} total records, {df['Year'].min()}-{df['Year'].max()}\n"
         
@@ -1108,7 +1216,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
                             
                         # Find matching weather data
                         location_env_data = hist_data[
-                            (hist_data['Location'] == hist_location) & 
+                            (hist_data['Location'] == hist_location) &
                             (hist_data['Year'].isin(navy_years))
                         ]
                         
@@ -1166,14 +1274,34 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
             if not bean_data.empty:
                 response += f"**🫘 {bean_type.title()} analysis:** {len(bean_data)} records, avg yield {bean_data['Yield'].mean():.2f} kg/ha\n"
         
-        return response, response, chart_data
+        return response, response, chart_data, cultivar_context
     
     else:
+        # PRIORITY: If we have web search results for non-Ontario queries, lead with that
+        if web_context and is_external_region_query:
+            response = f"## 🌐 **Global Bean Information**\n\n"
+            
+            # Convert web sources to clickable inline citations
+            web_response = web_context
+            for i, source in enumerate(web_sources, 1):
+                web_citation = f"[Web-{i}]"
+                clickable_citation = f"[Web-{i}]({source})"
+                web_response = web_response.replace(web_citation, clickable_citation)
+            
+            response += web_response
+            response += f"\n\n*🔗 Web sources are linked above for verification*\n"
+            
+            # Add Ontario context as supplementary information
+            response += f"\n---\n\n## 📊 **Supplementary: Ontario Bean Data Context**\n\n"
+            response += f"For comparison, the Ontario bean trial dataset contains {len(df)} records from {df['Year'].min()}-{df['Year'].max()} covering {', '.join(df['Location'].dropna().unique())}.\n"
+            
+            return response, response, {}, ""
+        
         # No chart requested, provide text-based analysis
         response = f"## 📊 **Bean Data Overview**\n\n"
         
-        # CRITICAL: Notify user if invalid cultivar was mentioned
-        if invalid_cultivar_mentioned:
+        # CRITICAL: Notify user if invalid cultivar was mentioned and no valid ones found
+        if invalid_cultivar_mentioned and not mentioned_cultivars:
             response += f"⚠️ **Note:** The cultivar '{invalid_cultivar_name}' was not found in the Ontario bean trial dataset. The analysis below shows general bean performance data.\n\n"
         
         # CRITICAL: Notify user about cross-market class comparison issues
@@ -1221,21 +1349,7 @@ def answer_bean_query(args: Dict) -> Tuple[str, str, Dict]:
         
         response += f"**💡 Tip:** Ask for a chart or visualization to see the data graphically!\n"
         
-        # Add web search context if available (for non-Ontario region queries)
-        if web_context and web_sources:
-            response += f"\n---\n\n## 🌐 **Global Context & Current Information**\n\n"
-            
-            # Convert web sources to clickable inline citations
-            web_response = web_context
-            for i, source in enumerate(web_sources, 1):
-                web_citation = f"[Web-{i}]"
-                clickable_citation = f"[Web-{i}]({source})"
-                web_response = web_response.replace(web_citation, clickable_citation)
-            
-            response += web_response
-            response += f"\n\n*🔗 Web sources are linked above for verification*\n"
-        
-        return response, response, {}
+        return response, response, {}, ""
 
 # Enhanced function schema for OpenAI function calling with new data capabilities
 function_schema = {

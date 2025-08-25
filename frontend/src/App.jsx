@@ -864,15 +864,15 @@ export default function App() {
         </div>
 
 
-        {/* Desktop collapse button */}
-        {!isMobile && !isTablet && (
-          <button
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              {/* Desktop collapse button */}
+              {!isMobile && !isTablet && (
+            <button
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors absolute top-4 right-4"
-          >
-            <FaCaretRight className={`text-gray-500 transition-transform ${sidebarCollapsed ? '' : 'rotate-180'}`} />
-          </button>
-        )}
+            >
+              <FaCaretRight className={`text-gray-500 transition-transform ${sidebarCollapsed ? '' : 'rotate-180'}`} />
+            </button>
+              )}
         {/* Session Info */}
         {(!sidebarCollapsed || (isMobile || isTablet)) && (
           <div className="p-4 border-b border-gray-200 dark:border-slate-800">
